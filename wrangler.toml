@@ -25,4 +25,4 @@ id = "c968ba58597c4b36af3b13cbe6417625" # 你的 KV 命名空间 ID (请替换�
 [[d1_databases]]
 binding = "DB" # 代码中调用该数据库的变量名
 database_name = "cf-emby-db" # 你的 D1 数据库的名称
-database_id = "161cd154-501d-42f6-8083-bcb381b81153" # 你的 D1 数据库 ID (请替换为实际的 UUID 格式)
+database_id = "706f60fd-0f15-487a-84d7-86e8b9ec46cc" # 你的 D1 数据库 ID (请替换为实际的 UUID 格式)
