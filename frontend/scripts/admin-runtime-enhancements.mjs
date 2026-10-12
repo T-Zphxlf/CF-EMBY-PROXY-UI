@@ -201,6 +201,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   let iconFrameId = 0;
   let shellFrameId = 0;
   let nodeModalWasOpen = false;
+  let tmdbPatchedApp = null;
   let patchedSafetyContractApp = null;
   const dashboardTrafficState = {
     period: 'day',
@@ -672,6 +673,70 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     headersPanel.setAttribute('data-admin-node-advanced-headers', '1');
     if (advancedFields.parentElement !== content) content.appendChild(advancedFields);
     if (headersPanel.parentElement !== content) content.appendChild(headersPanel);
+    syncTmdbAggregationControl(window.App, content, advancedFields);
+  }
+
+  function patchTmdbNodeMethods(app) {
+    if (!app || tmdbPatchedApp === app) return;
+    const originalBuildNodeModalFormState = app.buildNodeModalFormState;
+    const originalSaveNode = app.saveNode;
+    if (typeof originalBuildNodeModalFormState !== 'function' || typeof originalSaveNode !== 'function') return;
+    app.buildNodeModalFormState = function (...args) {
+      const state = originalBuildNodeModalFormState.apply(this, args);
+      const source = state?.hydratedNode || args[0] || {};
+      if (state?.form) state.form.tmdbAggregationEnabled = source?.tmdbAggregationEnabled === true;
+      return state;
+    };
+    app.saveNode = async function (...args) {
+      const enabled = document.querySelector('[data-admin-node-tmdb-aggregation="1"] input')?.checked === true
+        || this?.nodeModalForm?.tmdbAggregationEnabled === true;
+      if (this?.nodeModalForm) this.nodeModalForm.tmdbAggregationEnabled = enabled;
+      const originalApiCall = this.apiCall;
+      const wrappedApiCall = function (action, payload, ...rest) {
+        const nextPayload = action === 'save' && payload && typeof payload === 'object'
+          ? { ...payload, tmdbAggregationEnabled: enabled }
+          : payload;
+        return originalApiCall.call(this, action, nextPayload, ...rest);
+      };
+      this.apiCall = wrappedApiCall;
+      try {
+        return await originalSaveNode.apply(this, args);
+      } finally {
+        if (this.apiCall === wrappedApiCall) this.apiCall = originalApiCall;
+      }
+    };
+    tmdbPatchedApp = app;
+  }
+
+  function syncTmdbAggregationControl(app, content, advancedFields) {
+    if (!app || !content || !advancedFields) return;
+    patchTmdbNodeMethods(app);
+    if (app.nodeModalForm && typeof app.nodeModalForm.tmdbAggregationEnabled !== 'boolean') {
+      const currentName = String(app.nodeModalForm.originalName || app.nodeModalForm.name || '').trim().toLowerCase();
+      const currentNode = (Array.isArray(app.nodes) ? app.nodes : []).find((node) => String(node?.name || '').trim().toLowerCase() === currentName);
+      app.nodeModalForm.tmdbAggregationEnabled = currentNode?.tmdbAggregationEnabled === true;
+    }
+    let field = document.querySelector('[data-admin-node-tmdb-aggregation="1"]');
+    if (!field) {
+      field = document.createElement('label');
+      field.setAttribute('data-admin-node-tmdb-aggregation', '1');
+      field.className = 'col-span-full flex items-start justify-between gap-4 border-b border-slate-100 pb-3.5 dark:border-slate-800';
+      field.innerHTML = '<span class="min-w-0"><span class="block text-sm text-slate-500">TMDB 聚合</span><span class="mt-1 block text-xs leading-5 text-slate-400">启用后，带 tmdb.&lt;id&gt; 的 Provider ID 查询会改写为标题和年份搜索。</span></span><span class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 items-center"><input type="checkbox" class="peer absolute inset-0 h-full w-full cursor-pointer opacity-0"><span class="pointer-events-none absolute inset-0 rounded-full bg-slate-200 transition-colors peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-400 peer-focus-visible:ring-offset-2 dark:bg-slate-700"></span><span class="pointer-events-none absolute left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-4"></span></span>';
+    }
+    const input = field.querySelector('input');
+    if (input) {
+      const syncValue = () => {
+        if (app.nodeModalForm) app.nodeModalForm.tmdbAggregationEnabled = input.checked === true;
+      };
+      input.onchange = syncValue;
+      input.onclick = syncValue;
+      const renderKey = String(app.nodeModalRenderKey ?? '');
+      if (field.dataset.renderKey !== renderKey) {
+        input.checked = app.nodeModalForm?.tmdbAggregationEnabled === true;
+        field.dataset.renderKey = renderKey;
+      }
+    }
+    if (field.parentElement !== advancedFields) advancedFields.prepend(field);
   }
 
   function applyNodePrimaryFieldsLayout() {
@@ -818,11 +883,13 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     const createdIndexes = Array.isArray(initialization.createdIndexes) ? initialization.createdIndexes : [];
     const repairedIndexes = Array.isArray(initialization.repairedIndexes) ? initialization.repairedIndexes : [];
     const uniqueIndexesCreated = Array.isArray(initialization.uniqueIndexesCreated) ? initialization.uniqueIndexesCreated : [];
+    const droppedTriggers = Array.isArray(initialization.droppedTriggers) ? initialization.droppedTriggers : [];
     const rebuiltTables = Array.isArray(initialization.rebuiltTables) ? initialization.rebuiltTables : [];
     if (addedColumns.length) actionLines.push('• 补全列：' + addedColumns.join('、'));
     if (createdIndexes.length) actionLines.push('• 新建索引：' + createdIndexes.join('、'));
     if (repairedIndexes.length) actionLines.push('• 修复索引：' + repairedIndexes.join('、'));
     if (uniqueIndexesCreated.length) actionLines.push('• 补全唯一索引：' + uniqueIndexesCreated.join('、'));
+    if (droppedTriggers.length) actionLines.push('• 清理历史触发器：' + droppedTriggers.join('、'));
     for (const item of rebuiltTables) {
       const dataWasDiscarded = item?.willDiscardData === true && item?.dataMode === 'discard';
       if (dataWasDiscarded || item?.allowsDataLoss === true) {
@@ -854,7 +921,9 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       [/^rebuild_row_limit_exceeded:([^:]+):(.+)$/, '表 $1 超过自动重建上限（$2 行）'],
       [/^fts_contract_invalid$/, 'FTS 结构不兼容'],
       [/^missing_index:(.+)$/, '缺少索引: $1'],
-      [/^invalid_index:(.+)$/, '索引定义不兼容: $1']
+      [/^invalid_index:(.+)$/, '索引定义不兼容: $1'],
+      [/^schema_version_ahead:([0-9]+)$/, 'D1 结构版本（v$1）高于当前 Worker，将按当前契约重新认证'],
+      [/^legacy_fts_trigger:([^:]+):(.+)$/, '历史 FTS 同步触发器: $2']
     ];
     for (const [pattern, replacement] of mappings) if (pattern.test(issue)) return issue.replace(pattern, replacement) + ' [' + issue + ']';
     return issue;
@@ -1852,21 +1921,6 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       }
     };
 
-    app.exportSettingsWithSecretsFromUi = async function exportSettingsWithSecretsFromUi() {
-      const accepted = await this.askConfirm(
-        '完整设置备份会包含 Cloudflare API Token、Telegram Bot Token 等敏感密钥。请仅保存到可信位置，使用后及时删除。',
-        { title: '导出含密钥设置', tone: 'danger', confirmText: '确认导出' }
-      );
-      if (!accepted) return;
-      try {
-        const result = await callConfirmedAdminAction(this, 'exportSettings', { includeSecrets: true }, 'exportSettings');
-        if (result) this.downloadJson(result, 'emby_proxy_settings_with_secrets_' + Date.now() + '.json');
-      } catch (error) {
-        console.error('exportSettingsWithSecretsFromUi failed', error);
-        this.showMessage('完整设置导出失败: ' + (error?.message || '未知错误'), { tone: 'error', modal: true });
-      }
-    };
-
     app.exportNodes = async function exportNodes() {
       try {
         const result = await this.apiCall('exportConfig');
@@ -1891,6 +1945,20 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       }
     };
 
+    app.exportSettingsWithSecrets = async function exportSettingsWithSecrets() {
+      const accepted = await this.askConfirm('设置与密钥备份会包含 Cloudflare API Token、Telegram Bot Token 等敏感密钥。请仅保存到可信位置。', {
+        title: '导出设置与密钥', tone: 'danger', confirmText: '确认导出'
+      });
+      if (!accepted) return;
+      try {
+        const result = await callConfirmedAdminAction(this, 'exportSettings', { includeSecrets: true }, 'exportSettings');
+        if (result) this.downloadJson(result, 'emby_proxy_settings_with_secrets_' + Date.now() + '.json');
+      } catch (error) {
+        console.error('exportSettingsWithSecrets failed', error);
+        this.showMessage('设置与密钥导出失败: ' + (error?.message || '未知错误'), { tone: 'error', modal: true });
+      }
+    };
+
     app.initLogsDbFromUi = async function initializeDatabaseFromUi() {
       try {
         await this.runD1SchemaRepairFlow();
@@ -1900,40 +1968,6 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       }
     };
 
-  }
-
-  function createRuntimeActionButton(referenceButton, actionName, label, iconName, onClick) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = referenceButton?.className || 'px-4 py-2 rounded-xl border border-slate-200 text-sm font-medium';
-    button.setAttribute('data-admin-runtime-action', actionName);
-    button.innerHTML = '<i data-lucide="' + iconName + '" class="w-4 h-4 mr-1" aria-hidden="true"></i>' + label;
-    button.addEventListener('click', onClick);
-    return button;
-  }
-
-  function syncSecretExportButton(app) {
-    const settingsView = document.querySelector('#view-settings');
-    const defaultExportButton = settingsView
-      ? [...settingsView.querySelectorAll('button')].find((button) => String(button.textContent || '').trim() === '导出全局设置')
-      : null;
-    defaultExportButton?.setAttribute('title', '默认导出已脱敏，不包含 API Token 等密钥');
-    const actionGroup = defaultExportButton?.parentElement;
-    const existingButton = actionGroup?.querySelector('[data-admin-runtime-action="export-settings-secrets"]') || null;
-    if (!actionGroup || app?.isSettingsExpertMode?.() !== true) {
-      existingButton?.remove();
-      return;
-    }
-    if (existingButton) return;
-    const button = createRuntimeActionButton(
-      defaultExportButton,
-      'export-settings-secrets',
-      '导出含密钥设置',
-      'key-round',
-      () => app.exportSettingsWithSecretsFromUi()
-    );
-    button.className = 'px-4 py-2 border border-amber-300 text-amber-700 rounded-xl text-sm transition hover:bg-amber-100 dark:border-amber-900/40 dark:text-amber-300 dark:hover:bg-amber-900/20';
-    defaultExportButton.insertAdjacentElement('afterend', button);
   }
 
   function syncPlaybackInfoModeCopy() {
@@ -1949,7 +1983,6 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     const app = window.App;
     if (!app) return;
     patchSafetyContractMethods(app);
-    syncSecretExportButton(app);
     syncPlaybackInfoModeCopy();
   }
 
@@ -2010,7 +2043,4 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
 })();
 </script>`;
 
-export {
-  ADMIN_RUNTIME_ENHANCEMENT_STYLE,
-  ADMIN_RUNTIME_ENHANCEMENT_SCRIPT
-};
+export { ADMIN_RUNTIME_ENHANCEMENT_STYLE, ADMIN_RUNTIME_ENHANCEMENT_SCRIPT };
