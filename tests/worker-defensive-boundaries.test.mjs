@@ -7585,6 +7585,26 @@ test("incremental isolate cleanup covers nonessential proxy-adjacent caches", ()
     cachePort.maybeCleanup();
     assert.equal(cache.has(key), false, `cleanup phase ${phase} should remove stale entry`);
   }
+
+  const corruptPlayback = isolateState.PlaybackInfoResponseCache;
+  corruptPlayback.clear();
+  corruptPlayback.set("corrupt-playback", {
+    status: 200,
+    statusText: "OK",
+    headers: [["Content-Type", "application/json"]],
+    bodyText: JSON.stringify("frontend"),
+    bodyBytes: 19,
+    expiresAt: now + 60000,
+  });
+  isolateState.CleanupState.phase = 5;
+  isolateState.CleanupState.lastRunAt = 0;
+  isolateState.CleanupState.iterators = {};
+  cachePort.maybeCleanup();
+  assert.equal(
+    corruptPlayback.has("corrupt-playback"),
+    false,
+    "cleanup phase 5 should reclaim structurally invalid PlaybackInfo entries",
+  );
 });
 
 function createD1Recorder() {

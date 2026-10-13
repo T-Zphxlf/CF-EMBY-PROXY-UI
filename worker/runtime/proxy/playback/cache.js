@@ -12,6 +12,27 @@ function encodedBodyBytes(bodyText) {
   return textEncoder.encode(String(bodyText || "")).byteLength;
 }
 
+// 结构校验的唯一实现：请求路径的目标条目（get）与维护期分片清扫（cleanMap）共用。
+export function validatePlaybackInfoCacheEntry(entry, maxEntryBytes) {
+  const status = Number(entry?.status);
+  if (!(status >= 200 && status < 300) || status === 204 || status === 205) return null;
+  let headers;
+  try {
+    headers = new Headers(Array.isArray(entry?.headers) ? entry.headers : []);
+  } catch {
+    return null;
+  }
+  if (!isJsonHttpMediaType(headers.get("Content-Type"))) return null;
+  const bodyText = String(entry.bodyText || "");
+  const bodyBytes = encodedBodyBytes(bodyText);
+  const limit = Number(maxEntryBytes);
+  // 上限非法时不按 0 处理，否则一次漏传参数会把整个缓存判为脏数据。
+  if (Number.isFinite(limit) && limit > 0 && bodyBytes > limit) return null;
+  const payload = parsePlaybackInfoRootObject(bodyText);
+  if (!payload) return null;
+  return { headers, bodyText, bodyBytes, payload };
+}
+
 export function createPlaybackInfoCacheKey(parts, options = {}) {
   const hash = typeof options.hash === "function" ? options.hash : (value) => String(value || "");
   const serialize = typeof options.serialize === "function" ? options.serialize : JSON.stringify;
@@ -27,24 +48,6 @@ export class PlaybackInfoCacheStore {
     this.maxEntries = Math.max(1, Number(options.maxEntries) || 1);
     this.maxEntryBytes = Math.max(1, Number(options.maxEntryBytes) || 1);
     this.maxTotalBytes = Math.max(1, Number(options.maxTotalBytes) || 1);
-  }
-
-  #validateEntry(entry) {
-    const status = Number(entry?.status);
-    if (!(status >= 200 && status < 300) || status === 204 || status === 205) return null;
-    let headers;
-    try {
-      headers = new Headers(Array.isArray(entry.headers) ? entry.headers : []);
-    } catch {
-      return null;
-    }
-    if (!isJsonHttpMediaType(headers.get("Content-Type"))) return null;
-    const bodyText = String(entry.bodyText || "");
-    const bodyBytes = encodedBodyBytes(bodyText);
-    if (bodyBytes > this.maxEntryBytes) return null;
-    const payload = parsePlaybackInfoRootObject(bodyText);
-    if (!payload) return null;
-    return { headers, bodyText, bodyBytes, payload };
   }
 
   cleanup(now = this.now()) {
@@ -120,7 +123,7 @@ export class PlaybackInfoCacheStore {
     this.cleanup();
     const entry = this.entries.get(cacheKey);
     if (!entry) return null;
-    const validated = this.#validateEntry(entry);
+    const validated = validatePlaybackInfoCacheEntry(entry, this.maxEntryBytes);
     if (!validated) {
       this.entries.delete(cacheKey);
       return null;

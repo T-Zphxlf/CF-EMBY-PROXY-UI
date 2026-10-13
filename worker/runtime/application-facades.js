@@ -42,7 +42,7 @@ import {
   isPlaybackInfoRepresentation,
   parsePlaybackInfoRootObject,
 } from "./proxy/playback/contract.js";
-import { PlaybackInfoCacheStore } from "./proxy/playback/cache.js";
+import { PlaybackInfoCacheStore, validatePlaybackInfoCacheEntry } from "./proxy/playback/cache.js";
 import {
   decodePlaybackInfoJsonValue,
   normalizePlaybackInfoObjectArray,
@@ -34683,8 +34683,12 @@ function buildCacheServices(dependencies = {}) {
       } else if (state.phase === 5) {
         cleanMap(
           cacheState.PlaybackInfoResponseCache,
-          (v) => !v || (Number(v.expiresAt) || 0) <= now,
+          (v) =>
+            !v ||
+            (Number(v.expiresAt) || 0) <= now ||
+            !validatePlaybackInfoCacheEntry(v, DEFAULT_PLAYBACK_INFO_CACHE_ENTRY_MAX_BYTES),
           "playbackInfo",
+          iterators,
         );
         state.phase = 6;
       } else if (state.phase === 6) {
