@@ -6,8 +6,10 @@ import {
 import { isJsonHttpMediaType } from "../http/media-types.js";
 import { sanitizePlaybackInfoSerializedResponseHeaders } from "./rewrite.js";
 
+const textEncoder = new TextEncoder();
+
 function encodedBodyBytes(bodyText) {
-  return new TextEncoder().encode(String(bodyText || "")).byteLength;
+  return textEncoder.encode(String(bodyText || "")).byteLength;
 }
 
 export function createPlaybackInfoCacheKey(parts, options = {}) {
@@ -48,8 +50,7 @@ export class PlaybackInfoCacheStore {
   cleanup(now = this.now()) {
     for (const [cacheKey, entry] of this.entries) {
       const expiresAt = Number(entry?.expiresAt) || 0;
-      if ((expiresAt > 0 && expiresAt <= now) || !this.#validateEntry(entry))
-        this.entries.delete(cacheKey);
+      if (expiresAt > 0 && expiresAt <= now) this.entries.delete(cacheKey);
     }
     while (this.entries.size > this.maxEntries) {
       const oldestKey = this.entries.keys().next().value;
@@ -57,12 +58,22 @@ export class PlaybackInfoCacheStore {
       this.entries.delete(oldestKey);
     }
     let totalBytes = 0;
-    for (const entry of this.entries.values()) totalBytes += encodedBodyBytes(entry?.bodyText);
+    for (const entry of this.entries.values()) {
+      // shortcut: 这里只统计字节，不再逐条 JSON 校验或重新编码（该开销曾占满播放热点路径）；
+      // bodyBytes 由 set() 与 get() 维护，结构校验保留在那两处，脏条目仍不可能被投递。
+      const storedBytes = Number(entry?.bodyBytes);
+      const bodyBytes =
+        Number.isFinite(storedBytes) && storedBytes > 0
+          ? storedBytes
+          : encodedBodyBytes(entry?.bodyText);
+      entry.bodyBytes = bodyBytes;
+      totalBytes += bodyBytes;
+    }
     while (this.entries.size > 0 && totalBytes > this.maxTotalBytes) {
       const oldestKey = this.entries.keys().next().value;
       if (!oldestKey) break;
       const oldestEntry = this.entries.get(oldestKey);
-      totalBytes -= encodedBodyBytes(oldestEntry?.bodyText);
+      totalBytes -= Number(oldestEntry?.bodyBytes) || 0;
       this.entries.delete(oldestKey);
     }
   }

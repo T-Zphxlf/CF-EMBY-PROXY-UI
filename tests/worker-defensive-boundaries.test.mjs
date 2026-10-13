@@ -7380,7 +7380,7 @@ test("PlaybackInfo cache evicts oldest entries at its total byte budget", () => 
       statusText: "OK",
       headers: [["Content-Type", "application/json"]],
       bodyText,
-      bodyBytes: 1,
+      bodyBytes: entryBytes,
       expiresAt: Date.now() + 60000,
     });
   }
