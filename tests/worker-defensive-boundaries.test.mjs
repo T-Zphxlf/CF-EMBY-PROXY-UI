@@ -7981,3 +7981,211 @@ test("playback session keys are partitioned by node even when Emby session ids m
     /private|device-1|movie-1/,
   );
 });
+
+test("node probes treat redirects as reachable", async () => {
+  await withWorkerGlobals(
+    {
+      fetch: async () =>
+        new Response(null, {
+          status: 301,
+          headers: { Location: "https://origin.example/emby/system/info/public" },
+        }),
+    },
+    async () => {
+      const probe = await kernel.pingTarget("https://origin.example/emby", 1000);
+      assert.equal(probe.ok, true);
+      assert.equal(probe.reason, "redirect");
+      assert.equal(probe.statusCode, 301);
+    },
+  );
+
+  await withWorkerGlobals({ fetch: async () => new Response(null, { status: 503 }) }, async () => {
+    const probe = await kernel.pingTarget("https://origin.example/emby", 1000);
+    assert.equal(probe.ok, false);
+    assert.equal(probe.reason, "http_error");
+    assert.equal(probe.statusCode, 503);
+  });
+});
+
+test("failover probes treat redirects as reachable", async () => {
+  const originalProbeRequest = proxyService.performFailoverProbeRequest;
+  proxyService.performFailoverProbeRequest = async () => new Response(null, { status: 302 });
+  try {
+    const result = await proxyService.runFailoverProbeCandidate(
+      { failoverContext: { probePath: "/emby/system/ping", probeTimeoutMs: 1000 } },
+      createTargetRecord("https://origin.example/emby"),
+    );
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 302);
+  } finally {
+    proxyService.performFailoverProbeRequest = originalProbeRequest;
+  }
+});
+
+test("failover eligibility covers PlaybackInfo POST", () => {
+  const targetRecords = [
+    createTargetRecord("https://origin-a.example"),
+    createTargetRecord("https://origin-b.example"),
+  ];
+  const playbackInfo = proxyService.isFailoverEligible(
+    {
+      hedgeFailoverEnabled: true,
+      requestMethod: "POST",
+      requestTraits: { isPlaybackInfoRequest: true },
+    },
+    targetRecords,
+  );
+  assert.equal(playbackInfo.eligible, true);
+
+  const sessionControl = proxyService.isFailoverEligible(
+    { hedgeFailoverEnabled: true, requestMethod: "POST", requestTraits: {} },
+    targetRecords,
+  );
+  assert.equal(sessionControl.eligible, false);
+  assert.equal(sessionControl.reason, "non_idempotent");
+});
+
+test("PlaybackInfo POST keeps every target for cross-target failover", async () => {
+  const body = JSON.stringify({ UserId: "user-1" });
+  const request = new Request("https://worker.test/node/Items/1/PlaybackInfo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Content-Length": String(body.length) },
+    body,
+  });
+  const transport = await proxyService.buildProxyRequestState(
+    request,
+    { mediaAuthMode: "auto" },
+    "/Items/1/PlaybackInfo",
+    new URL(request.url),
+    "203.0.113.1",
+    { isPlaybackInfoRequest: true },
+    false,
+    [
+      createTargetRecord("https://origin-a.example"),
+      createTargetRecord("https://origin-b.example"),
+    ],
+    {},
+  );
+  assert.equal(transport.preparedBodyMode, "buffered");
+  assert.equal(transport.retryTargetRecords.length, 2);
+  assert.equal(transport.allowAutomaticRetry, true);
+  assert.equal(transport.allowSameTargetRetry, false);
+
+  const streamedRequest = new Request("https://worker.test/node/Items/1/PlaybackInfo", {
+    method: "POST",
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("{}"));
+        controller.close();
+      },
+    }),
+    duplex: "half",
+  });
+  const streamedTransport = await proxyService.buildProxyRequestState(
+    streamedRequest,
+    { mediaAuthMode: "auto" },
+    "/Items/1/PlaybackInfo",
+    new URL(streamedRequest.url),
+    "203.0.113.1",
+    { isPlaybackInfoRequest: true },
+    false,
+    [
+      createTargetRecord("https://origin-a.example"),
+      createTargetRecord("https://origin-b.example"),
+    ],
+    {},
+  );
+  assert.equal(streamedTransport.preparedBodyMode, "stream");
+  assert.equal(streamedTransport.retryTargetRecords.length, 1);
+  assert.equal(streamedTransport.allowAutomaticRetry, false);
+});
+
+test("cross-origin redirects strip client auth and keep admin headers", async () => {
+  const request = new Request("https://worker.test/node/secret/Videos/1/stream", {
+    headers: {
+      Authorization: "MediaBrowser Token=client-secret",
+      Cookie: "session=client-cookie",
+    },
+  });
+  const transport = await proxyService.buildProxyRequestState(
+    request,
+    { mediaAuthMode: "auto", headers: { "X-Emby-Token": "admin-token" } },
+    "/Videos/1/stream",
+    new URL(request.url),
+    "203.0.113.1",
+    { isBigStream: true },
+    false,
+    [],
+    {},
+  );
+  const buildFetchOptions = proxyService.createBuildFetchOptions(
+    {
+      requestMethod: "GET",
+      requestTraits: { isBigStream: true },
+      protocolFallback: false,
+    },
+    transport,
+  );
+  const fetchOptions = await buildFetchOptions(new URL("https://cdn.example/seg.ts"), {
+    isExternalRedirect: true,
+  });
+  assert.equal(fetchOptions.headers.has("Authorization"), false);
+  assert.equal(fetchOptions.headers.has("X-Emby-Authorization"), false);
+  assert.equal(fetchOptions.headers.get("X-Emby-Token"), "admin-token");
+  assert.equal(fetchOptions.headers.has("Cookie"), false);
+
+  const sameOriginOptions = await buildFetchOptions(new URL("https://worker.test/seg.ts"), {});
+  assert.equal(
+    sameOriginOptions.headers.get("Authorization"),
+    "MediaBrowser Token=client-secret",
+    "same-origin fetches must keep client auth",
+  );
+});
+
+test("auto media auth mode carries both token query names", () => {
+  const policy = { auth: { token: "auto-token", deviceId: "" } };
+  const autoUrl = proxyService.appendMediaRedirectAuthToUrl(
+    new URL("https://node.test/Videos/1/stream"),
+    policy,
+    "auto",
+  );
+  assert.equal(autoUrl.searchParams.get("api_key"), "auto-token");
+  assert.equal(autoUrl.searchParams.get("ApiKey"), "auto-token");
+
+  const presetUrl = proxyService.appendMediaRedirectAuthToUrl(
+    new URL("https://node.test/Videos/1/stream?ApiKey=preset"),
+    policy,
+    "auto",
+  );
+  assert.equal(presetUrl.searchParams.get("ApiKey"), "preset");
+  assert.equal(presetUrl.searchParams.get("api_key"), null);
+});
+
+test("direct media auth policy ignores unrelated cookies but keeps auth cookies", async () => {
+  const buildPolicy = async (headers) => {
+    const request = new Request("https://worker.test/node/secret/Videos/1/stream", { headers });
+    const transport = await proxyService.buildProxyRequestState(
+      request,
+      { mediaAuthMode: "auto" },
+      "/Videos/1/stream",
+      new URL(request.url),
+      "203.0.113.1",
+      { isBigStream: true },
+      false,
+      [],
+      {},
+    );
+    return transport.clientRedirectAuthPolicy;
+  };
+
+  const generic = await buildPolicy({ Cookie: "theme=dark; _ga=GA1.2.3", "X-Emby-Token": "tok" });
+  assert.equal(generic.canDirect, true);
+  assert.deepEqual(generic.cookieAuthHeaders, []);
+
+  const authCookie = await buildPolicy({ Cookie: "emby_session=abc" });
+  assert.equal(authCookie.canDirect, false);
+  assert.deepEqual(authCookie.cookieAuthHeaders, ["cookie"]);
+
+  const internalOnly = await buildPolicy({ Cookie: "legacy_proxy_ctx=abc; emby_web_bypass=1" });
+  assert.equal(internalOnly.canDirect, true);
+});
