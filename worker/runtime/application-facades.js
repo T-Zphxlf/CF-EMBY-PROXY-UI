@@ -23210,6 +23210,7 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
         { playbackRelayTargetUrl: execution.playbackRelayTargetUrl },
       );
       execution.redirectTrace = redirectTrace;
+      // relay 目标是客户端可指定的绝对 URL，一律按外域剥离客户端鉴权；relay URL 自带查询参数鉴权。
       const upstream = execution.playbackRelayTargetUrl
         ? await kernel.fetchAbsoluteWithRetryLoop({
             execution,
