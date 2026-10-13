@@ -20339,7 +20339,8 @@ function appendMediaRedirectAuthToUrl(targetUrl, headersOrPolicy, mediaAuthMode 
       : effectiveMediaAuthMode === "emby"
         ? ["api_key"]
         : ["api_key", "ApiKey"];
-  if (auth.token && !hasRedirectQueryAlias(safeUrl, MEDIA_REDIRECT_AUTH_QUERY_KEYS))
+  // 只按当前模式认可的名字判重：Jellyfin 12 关闭 legacy 后不认 api_key，Emby 不认 ApiKey。
+  if (auth.token && !tokenQueryKeys.some((key) => safeUrl.searchParams.has(key)))
     for (const tokenQueryKey of tokenQueryKeys) safeUrl.searchParams.set(tokenQueryKey, auth.token);
   if (auth.deviceId && !hasRedirectQueryAlias(safeUrl, MEDIA_REDIRECT_DEVICE_QUERY_KEYS))
     safeUrl.searchParams.set("DeviceId", auth.deviceId);

@@ -2654,7 +2654,15 @@ test("direct media redirects append the Jellyfin ApiKey query name only for Jell
     "jellyfin",
   );
   assert.equal(preAuthedUrl.searchParams.get("api_key"), "preset");
-  assert.equal(preAuthedUrl.searchParams.get("ApiKey"), null);
+  assert.equal(preAuthedUrl.searchParams.get("ApiKey"), "redirect-token");
+
+  const embyPreAuthedUrl = proxyService.appendMediaRedirectAuthToUrl(
+    new URL("https://node.test/Videos/1/stream?ApiKey=preset"),
+    policy,
+    "emby",
+  );
+  assert.equal(embyPreAuthedUrl.searchParams.get("ApiKey"), "preset");
+  assert.equal(embyPreAuthedUrl.searchParams.get("api_key"), "redirect-token");
 });
 
 test("proxy request state synthesizes Jellyfin authorization from token headers", async () => {
