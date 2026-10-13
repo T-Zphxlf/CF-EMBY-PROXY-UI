@@ -57,6 +57,9 @@ function invalidResult(response, reason) {
   });
 }
 
+// 缺省读取上限：与 CACHE_DEFAULTS.PlaybackInfoCacheEntryMaxBytes 同值，调用方漏传 maxBytes 时按它读取。
+const DEFAULT_INSPECTION_MAX_BYTES = 256 * 1024;
+
 export async function inspectPlaybackInfoResponse(response, options = {}) {
   const requestMethod = String(options.requestMethod || "GET").toUpperCase();
   if (
@@ -70,10 +73,15 @@ export async function inspectPlaybackInfoResponse(response, options = {}) {
     return Object.freeze({ kind: "skip" });
   if (!isJsonHttpMediaType(response.headers.get("Content-Type")))
     return invalidResult(response, "unsupported_content_type");
-  const bodyResult = await readResponseTextWithLimit(response.clone(), options.maxBytes);
+  const requestedMaxBytes = Number(options.maxBytes);
+  const maxBytes =
+    Number.isFinite(requestedMaxBytes) && requestedMaxBytes > 0
+      ? Math.floor(requestedMaxBytes)
+      : DEFAULT_INSPECTION_MAX_BYTES;
+  const bodyResult = await readResponseTextWithLimit(response.clone(), maxBytes);
   if (bodyResult.exceeded) {
     // 只有真正超过上限才算 body_too_large；body 读取中断是另一种失败，仍需报错。
-    const exceededLimit = Number(bodyResult.bytes) > Number(options.maxBytes);
+    const exceededLimit = Number(bodyResult.bytes) > maxBytes;
     return invalidResult(response, exceededLimit ? "body_too_large" : "body_read_failed");
   }
   const payload = parsePlaybackInfoRootObject(bodyResult.text);

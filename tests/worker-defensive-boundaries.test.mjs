@@ -45,6 +45,7 @@ import {
   sanitizeRuntimeConfig,
   serializeBoundedLogDetailJson,
 } from "../worker/runtime/application-facades.js";
+import { inspectPlaybackInfoResponse } from "../worker/runtime/proxy/playback/contract.js";
 
 const hooks = createTestApplication();
 assert.ok(hooks, "worker.js must expose Node test hooks");
@@ -7003,6 +7004,23 @@ test(
     assert.equal(isolateState.PlaybackInfoResponseCache.size, 0);
   },
 );
+
+test("PlaybackInfo body inspection falls back to a bounded default when maxBytes is omitted", async () => {
+  const bodyText = JSON.stringify({ MediaSources: [] });
+  const valid = await inspectPlaybackInfoResponse(
+    new Response(bodyText, { headers: { "Content-Type": "application/json" } }),
+  );
+  assert.equal(valid.kind, "valid");
+  assert.equal(valid.representation.bodyText, bodyText);
+
+  const oversized = await inspectPlaybackInfoResponse(
+    new Response("x".repeat(Config.Defaults.PlaybackInfoCacheEntryMaxBytes + 1), {
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+  assert.equal(oversized.kind, "invalid");
+  assert.equal(oversized.reason, "body_too_large");
+});
 
 test("PlaybackInfo passthrough decodes nested object fields and removes invalid entries", async () => {
   const execution = {
