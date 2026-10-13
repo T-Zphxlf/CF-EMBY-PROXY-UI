@@ -28404,12 +28404,12 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
         maxBytes: DEFAULT_PLAYBACK_INFO_CACHE_ENTRY_MAX_BYTES,
       });
       if (inspection.kind === "skip") return upstreamState;
-      // 体积超限只放弃缓存与重写，不打断播放：原样透传上游响应并留下诊断标记
-      if (inspection.reason === "body_too_large") {
-        execution.playbackInfoRewrite = "skipped_oversized";
-        return upstreamState;
-      }
       if (inspection.kind === "invalid") {
+        // 体积超限只放弃缓存与重写，不打断播放：原样透传上游响应并留下诊断标记
+        if (inspection.reason === "body_too_large") {
+          execution.playbackInfoRewrite = "skipped_oversized";
+          return upstreamState;
+        }
         return methods.buildPlaybackInfoContractErrorState(
           execution,
           upstreamState,
