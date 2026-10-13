@@ -2620,7 +2620,7 @@ test("media auth normalization targets the documented Emby and Jellyfin schemes"
 
   const autoTokenOnly = new Headers({ "X-Emby-Token": "token-auto" });
   proxyService.normalizeMediaAuthHeaders(autoTokenOnly, "auto");
-  assert.equal(autoTokenOnly.has("Authorization"), false);
+  assert.equal(autoTokenOnly.get("Authorization"), 'MediaBrowser Token="token-auto"');
   assert.equal(autoTokenOnly.get("X-Emby-Token"), "token-auto");
 
   const passthrough = new Headers({ "X-Emby-Token": "token-passthrough" });

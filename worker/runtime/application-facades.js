@@ -20363,6 +20363,10 @@ function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto") {
   const legacyEmbyScheme = getMediaAuthorizationScheme(legacyEmbyAuthorization);
   const fixedScheme =
     mediaAuthMode === "emby" ? "emby" : mediaAuthMode === "jellyfin" ? "mediabrowser" : "";
+  // Jellyfin 12（EnableLegacyAuthorization 默认关闭）只认 Authorization 头；Emby 与旧版 Jellyfin
+  // 仍可从 X-Emby-Token / api_key 取 token。auto 模式也无法确定上游，因此同样补一个 MediaBrowser
+  // scheme，原 token 载体保留，让两种上游都能鉴权。
+  const synthesisScheme = fixedScheme || "mediabrowser";
   let canonicalAuthorization = standardScheme
     ? standardAuthorization
     : mediaBrowserScheme
@@ -20370,8 +20374,7 @@ function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto") {
       : legacyEmbyScheme
         ? legacyEmbyAuthorization
         : "";
-  if (!canonicalAuthorization && fixedScheme) {
-    // Jellyfin 10.10+/12 disables legacy token headers by default; surface a documented Authorization scheme when only a token carrier is present.
+  if (!canonicalAuthorization) {
     const token =
       getLooseHeaderValue(headers, "X-Emby-Token").trim() ||
       getLooseHeaderValue(headers, "X-MediaBrowser-Token").trim() ||
@@ -20379,7 +20382,7 @@ function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto") {
       getLooseHeaderValue(headers, "X-MediaBrowser-Auth-Token").trim();
     const bearerMatch = /^Bearer\s+(.+)$/i.exec(standardAuthorization);
     canonicalAuthorization = buildMediaAuthorizationFromToken(
-      fixedScheme,
+      synthesisScheme,
       token || (bearerMatch ? bearerMatch[1] : ""),
     );
   }
