@@ -21125,9 +21125,11 @@ function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
         try {
           response.body?.cancel?.();
         } catch {}
+        // 3xx 表示节点可达（HTTP→HTTPS、反代规范化等），不应判为失败。
+        const reachable = statusCode >= 200 && statusCode < 400;
         return buildResult({
-          ok: response.ok,
-          reason: response.ok ? "ok" : "http_error",
+          ok: reachable,
+          reason: reachable ? (statusCode < 300 ? "ok" : "redirect") : "http_error",
           statusCode,
           methodUsed,
         });
@@ -27642,7 +27644,8 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           );
         }
         const elapsedMs = Math.max(0, nowMs() - startedAt);
-        if (response.ok) {
+        const probeStatus = Number(response.status) || 0;
+        if (probeStatus >= 200 && probeStatus < 400) {
           const status = response.status;
           try {
             response.body?.cancel?.();
