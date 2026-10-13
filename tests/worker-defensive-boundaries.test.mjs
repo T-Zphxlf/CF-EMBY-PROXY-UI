@@ -8142,6 +8142,44 @@ test("cross-origin redirects strip client auth and keep admin headers", async ()
   );
 });
 
+test("cross-origin redirects forward only the admin cookie, not client cookies", async () => {
+  const request = new Request("https://worker.test/node/secret/Videos/1/stream", {
+    headers: {
+      Authorization: "MediaBrowser Token=client-secret",
+      Cookie: "session=client-cookie",
+    },
+  });
+  const transport = await proxyService.buildProxyRequestState(
+    request,
+    {
+      mediaAuthMode: "auto",
+      headers: { Cookie: "node_session=admin-cookie; auth_token=blocked" },
+    },
+    "/Videos/1/stream",
+    new URL(request.url),
+    "203.0.113.1",
+    { isBigStream: true },
+    false,
+    [],
+    {},
+  );
+  const buildFetchOptions = proxyService.createBuildFetchOptions(
+    {
+      requestMethod: "GET",
+      requestTraits: { isBigStream: true },
+      protocolFallback: false,
+    },
+    transport,
+  );
+  const fetchOptions = await buildFetchOptions(new URL("https://cdn.example/seg.ts"), {
+    isExternalRedirect: true,
+  });
+  const cookieHeader = String(fetchOptions.headers.get("Cookie") || "");
+  assert.match(cookieHeader, /node_session=admin-cookie/);
+  assert.doesNotMatch(cookieHeader, /client-cookie/);
+  assert.doesNotMatch(cookieHeader, /auth_token/);
+});
+
 test("auto media auth mode carries both token query names", () => {
   const policy = { auth: { token: "auto-token", deviceId: "" } };
   const autoUrl = proxyService.appendMediaRedirectAuthToUrl(

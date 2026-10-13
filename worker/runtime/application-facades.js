@@ -23124,12 +23124,14 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           const adminPreservedHeaderEntries = [];
           if (adminCustomHeaders instanceof Set)
             for (const adminHeaderName of adminCustomHeaders) {
+              if (adminHeaderName === "cookie") continue;
               const adminHeaderValue = newHeaders.get(adminHeaderName);
               if (adminHeaderValue === null) continue;
               adminPreservedHeaderEntries.push([adminHeaderName, adminHeaderValue]);
             }
           stripSensitiveProxyAuthHeaders(headers);
           headers.delete("Cookie");
+          if (transportTemplate?.adminCookie) headers.set("Cookie", transportTemplate.adminCookie);
           for (const [adminHeaderName, adminHeaderValue] of adminPreservedHeaderEntries)
             headers.set(adminHeaderName, adminHeaderValue);
           if (!adminCustomHasOrigin) headers.delete("Origin");
@@ -28120,6 +28122,12 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
       );
       if (mergedCookie) newHeaders.set("Cookie", mergedCookie);
       else newHeaders.delete("Cookie");
+      const adminCookie = adminCustomCookie
+        ? mergeAndSanitizeCookieHeaders(null, adminCustomCookie, [
+            "auth_token",
+            ...INTERNAL_PROXY_COOKIE_NAMES,
+          ])
+        : null;
       normalizeMediaAuthHeaders(newHeaders, options.effectiveMediaAuthMode || node.mediaAuthMode);
       const realClientIpHeaderMode = getRealClientIpHeaderMode(
         options.effectiveRealClientIpMode || node.realClientIpMode,
@@ -28167,6 +28175,7 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
         adminCustomHasReferer,
         refererOrigin,
         refererPathAndSearch,
+        adminCookie,
       };
       const isNonIdempotent = request.method !== "GET" && request.method !== "HEAD";
       let preparedBody = null;
