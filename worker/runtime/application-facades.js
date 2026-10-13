@@ -16649,6 +16649,22 @@ function isPotentialPrivateMediaAuthHeaderName(name = "") {
     normalized.includes("token")
   );
 }
+function isPotentialPrivateMediaAuthCookieName(name = "") {
+  const normalized = String(name || "")
+    .trim()
+    .toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized.includes("emby") ||
+    normalized.includes("jellyfin") ||
+    normalized.includes("mediabrowser") ||
+    normalized.includes("token") ||
+    normalized.includes("auth") ||
+    normalized.includes("apikey") ||
+    normalized.includes("api_key") ||
+    normalized.includes("api-key")
+  );
+}
 //#endregion
 //#region worker/features/proxy/metadata-cache/model.js
 var WORKER_CACHE_DROP_QUERY_PARAMS = /* @__PURE__ */ new Set([
@@ -20263,8 +20279,17 @@ function evaluateMediaClientRedirectAuthPolicy(headers) {
   const auth = extractMediaRedirectAuth(headers);
   const headerAuthHeaders = [];
   const cookieAuthHeaders = [];
-  if (stripCookieHeaderNames(getLooseHeaderValue(headers, "Cookie"), INTERNAL_PROXY_COOKIE_NAMES))
-    cookieAuthHeaders.push("cookie");
+  const remainingCookieHeader = stripCookieHeaderNames(
+    getLooseHeaderValue(headers, "Cookie"),
+    INTERNAL_PROXY_COOKIE_NAMES,
+  );
+  if (remainingCookieHeader) {
+    for (const cookieName of parseCookieHeader(remainingCookieHeader).keys()) {
+      if (!isPotentialPrivateMediaAuthCookieName(cookieName)) continue;
+      cookieAuthHeaders.push("cookie");
+      break;
+    }
+  }
   for (const headerName of MEDIA_REDIRECT_STANDARD_AUTH_HEADER_NAMES) {
     const value = getLooseHeaderValue(headers, headerName).trim();
     if (!value) continue;
@@ -20304,11 +20329,17 @@ function appendMediaRedirectAuthToUrl(targetUrl, headersOrPolicy, mediaAuthMode 
       ? headersOrPolicy
       : { auth: extractMediaRedirectAuth(headersOrPolicy) }
     ).auth || {};
+  const effectiveMediaAuthMode = normalizeNodeMediaAuthMode(mediaAuthMode);
   // Jellyfin 10.10+ only reads ApiKey once legacy authorization is disabled; Emby and legacy Jellyfin read api_key.
-  const tokenQueryKey =
-    normalizeNodeMediaAuthMode(mediaAuthMode) === "jellyfin" ? "ApiKey" : "api_key";
+  // auto 无法确定上游版本，同时携带两种名字；上游忽略它不读的那个。
+  const tokenQueryKeys =
+    effectiveMediaAuthMode === "jellyfin"
+      ? ["ApiKey"]
+      : effectiveMediaAuthMode === "emby"
+        ? ["api_key"]
+        : ["api_key", "ApiKey"];
   if (auth.token && !hasRedirectQueryAlias(safeUrl, MEDIA_REDIRECT_AUTH_QUERY_KEYS))
-    safeUrl.searchParams.set(tokenQueryKey, auth.token);
+    for (const tokenQueryKey of tokenQueryKeys) safeUrl.searchParams.set(tokenQueryKey, auth.token);
   if (auth.deviceId && !hasRedirectQueryAlias(safeUrl, MEDIA_REDIRECT_DEVICE_QUERY_KEYS))
     safeUrl.searchParams.set("DeviceId", auth.deviceId);
   return safeUrl;
@@ -23059,11 +23090,6 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
       const transportRefererOrigin = String(transportTemplate?.refererOrigin || "").trim();
       const transportRefererPathAndSearch =
         String(transportTemplate?.refererPathAndSearch || "/") || "/";
-      const isHotMediaRequest = transportTemplate
-        ? transportTemplate.isHotMediaRequest === true
-        : requestTraits.isBigStream === true ||
-          requestTraits.isManifest === true ||
-          requestTraits.isSegment === true;
       return async (targetUrl, options = {}) => {
         const headers = new Headers(baseHeaderEntries);
         const targetOrigin = (targetUrl instanceof URL ? targetUrl : new URL(String(targetUrl)))
@@ -23094,10 +23120,18 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
             headers.set("Referer", `${targetOrigin}${transportRefererPathAndSearch}`);
         }
         if (isExternalRedirect) {
-          if (!isHotMediaRequest) {
-            stripSensitiveProxyAuthHeaders(headers);
-            headers.delete("Cookie");
-          }
+          // 跨域重定向默认剥离客户端鉴权，仅保留管理员显式配置的头。
+          const adminPreservedHeaderEntries = [];
+          if (adminCustomHeaders instanceof Set)
+            for (const adminHeaderName of adminCustomHeaders) {
+              const adminHeaderValue = newHeaders.get(adminHeaderName);
+              if (adminHeaderValue === null) continue;
+              adminPreservedHeaderEntries.push([adminHeaderName, adminHeaderValue]);
+            }
+          stripSensitiveProxyAuthHeaders(headers);
+          headers.delete("Cookie");
+          for (const [adminHeaderName, adminHeaderValue] of adminPreservedHeaderEntries)
+            headers.set(adminHeaderName, adminHeaderValue);
           if (!adminCustomHasOrigin) headers.delete("Origin");
           if (!adminCustomHasReferer) headers.delete("Referer");
         }
@@ -28133,11 +28167,6 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
         adminCustomHasReferer,
         refererOrigin,
         refererPathAndSearch,
-        isHotMediaRequest:
-          requestTraits.isSmartStrmMedia === true ||
-          requestTraits.isBigStream === true ||
-          requestTraits.isManifest === true ||
-          requestTraits.isSegment === true,
       };
       const isNonIdempotent = request.method !== "GET" && request.method !== "HEAD";
       let preparedBody = null;
