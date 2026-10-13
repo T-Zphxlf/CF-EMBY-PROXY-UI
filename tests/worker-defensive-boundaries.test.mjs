@@ -8043,6 +8043,28 @@ test("failover eligibility covers PlaybackInfo POST", () => {
   );
   assert.equal(sessionControl.eligible, false);
   assert.equal(sessionControl.reason, "non_idempotent");
+  const replayable = proxyService.isFailoverEligible(
+    {
+      hedgeFailoverEnabled: true,
+      requestMethod: "POST",
+      requestTraits: { isPlaybackInfoRequest: true },
+      request: { body: {}, headers: { get: () => "128" } },
+    },
+    targetRecords,
+  );
+  assert.equal(replayable.eligible, true);
+
+  const nonReplayable = proxyService.isFailoverEligible(
+    {
+      hedgeFailoverEnabled: true,
+      requestMethod: "POST",
+      requestTraits: { isPlaybackInfoRequest: true },
+      request: { body: {}, headers: { get: () => "99999999" } },
+    },
+    targetRecords,
+  );
+  assert.equal(nonReplayable.eligible, false);
+  assert.equal(nonReplayable.reason, "non_replayable_body");
 });
 
 test("PlaybackInfo POST keeps every target for cross-target failover", async () => {
@@ -8226,4 +8248,12 @@ test("direct media auth policy ignores unrelated cookies but keeps auth cookies"
 
   const internalOnly = await buildPolicy({ Cookie: "legacy_proxy_ctx=abc; emby_web_bypass=1" });
   assert.equal(internalOnly.canDirect, true);
+  const sessionCookie = await buildPolicy({ Cookie: "session=abc; consent=1" });
+  assert.equal(sessionCookie.canDirect, false);
+
+  const credentialCookie = await buildPolicy({ Cookie: "jellyfin_credentials=xyz" });
+  assert.equal(credentialCookie.canDirect, false);
+
+  const newsletterCookie = await buildPolicy({ Cookie: "newsletter=true" });
+  assert.equal(newsletterCookie.canDirect, true);
 });

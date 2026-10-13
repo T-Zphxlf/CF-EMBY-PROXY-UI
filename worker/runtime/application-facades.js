@@ -16627,43 +16627,44 @@ function normalizeLooseHeaderEntries(headersLike) {
     ]);
   return [];
 }
+var PRIVATE_MEDIA_AUTH_NAME_KEYWORDS = [
+  "authorization",
+  "api-key",
+  "apikey",
+  "access-key",
+  "accesskey",
+  "access-token",
+  "accesstoken",
+  "session",
+  "credential",
+  "signature",
+  "secret",
+  "auth",
+  "token",
+];
+var PRIVATE_MEDIA_AUTH_COOKIE_KEYWORDS = [
+  "emby",
+  "jellyfin",
+  "mediabrowser",
+  "api_key",
+  ...PRIVATE_MEDIA_AUTH_NAME_KEYWORDS,
+];
+// Emby/Jellyfin 服务端只从 Authorization/X-Emby-Token 头或 api_key/ApiKey 查询取 token，不使用 Cookie；
+// 这里按名字特征兜底识别客户端把凭据放进 Cookie 的情况。
 function isPotentialPrivateMediaAuthHeaderName(name = "") {
   const normalized = String(name || "")
     .trim()
     .toLowerCase();
   if (!normalized || MEDIA_REDIRECT_SAFE_HEADER_NAMES.has(normalized) || normalized === "cookie")
     return false;
-  return (
-    normalized.includes("authorization") ||
-    normalized.includes("api-key") ||
-    normalized.includes("apikey") ||
-    normalized.includes("access-key") ||
-    normalized.includes("accesskey") ||
-    normalized.includes("access-token") ||
-    normalized.includes("accesstoken") ||
-    normalized.includes("session") ||
-    normalized.includes("credential") ||
-    normalized.includes("signature") ||
-    normalized.includes("secret") ||
-    normalized.includes("auth") ||
-    normalized.includes("token")
-  );
+  return PRIVATE_MEDIA_AUTH_NAME_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 function isPotentialPrivateMediaAuthCookieName(name = "") {
   const normalized = String(name || "")
     .trim()
     .toLowerCase();
   if (!normalized) return false;
-  return (
-    normalized.includes("emby") ||
-    normalized.includes("jellyfin") ||
-    normalized.includes("mediabrowser") ||
-    normalized.includes("token") ||
-    normalized.includes("auth") ||
-    normalized.includes("apikey") ||
-    normalized.includes("api_key") ||
-    normalized.includes("api-key")
-  );
+  return PRIVATE_MEDIA_AUTH_COOKIE_KEYWORDS.some((keyword) => normalized.includes(keyword));
 }
 //#endregion
 //#region worker/features/proxy/metadata-cache/model.js
@@ -27192,6 +27193,16 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
 }
 //#endregion
 //#region worker/features/proxy/routing/failover-state-methods.js
+// PlaybackInfo 是只读 POST，但只有可重放的 body 才能跨 target 切换；流式 body 无法重放。
+function isReplayableRetryBody(request) {
+  if (!request || !request.body) return true;
+  const contentLength = parseContentLengthHeader(request?.headers?.get("Content-Length"));
+  return (
+    Number.isFinite(contentLength) &&
+    contentLength >= 0 &&
+    contentLength <= DEFAULT_BUFFERED_RETRY_BODY_MAX_BYTES
+  );
+}
 function defineProxyFailoverStateMethods(dependencies = {}, kernel = {}) {
   const { nodeRepository } = dependencies;
   return {
@@ -27217,15 +27228,18 @@ function defineProxyFailoverStateMethods(dependencies = {}, kernel = {}) {
           eligible: false,
           reason: "disabled",
         };
-      if (
-        execution.requestMethod !== "GET" &&
-        execution.requestMethod !== "HEAD" &&
-        execution?.requestTraits?.isPlaybackInfoRequest !== true
-      )
-        return {
-          eligible: false,
-          reason: "non_idempotent",
-        };
+      if (execution.requestMethod !== "GET" && execution.requestMethod !== "HEAD") {
+        if (execution?.requestTraits?.isPlaybackInfoRequest !== true)
+          return {
+            eligible: false,
+            reason: "non_idempotent",
+          };
+        if (!isReplayableRetryBody(execution.request))
+          return {
+            eligible: false,
+            reason: "non_replayable_body",
+          };
+      }
       if (execution?.requestTraits?.isWsUpgrade === true)
         return {
           eligible: false,
