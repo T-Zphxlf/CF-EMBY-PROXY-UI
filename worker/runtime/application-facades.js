@@ -23186,7 +23186,10 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
             allowAutomaticRetry: transport.allowAutomaticRetry,
             stripAuthOnProtocolFallback: execution.requestTraits.canStripAuthOnProtocolFallback,
             upstreamTimeoutMs: execution.upstreamTimeoutMs,
-            maxExtraAttempts: transport.allowAutomaticRetry ? execution.upstreamRetryAttempts : 0,
+            maxExtraAttempts:
+              transport.allowAutomaticRetry && transport.allowSameTargetRetry !== false
+                ? execution.upstreamRetryAttempts
+                : 0,
             isRetry: false,
             requestLifecycle: execution.requestLifecycle,
           })
@@ -23202,7 +23205,10 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
             allowAutomaticRetry: transport.allowAutomaticRetry,
             stripAuthOnProtocolFallback: execution.requestTraits.canStripAuthOnProtocolFallback,
             upstreamTimeoutMs: execution.upstreamTimeoutMs,
-            maxExtraAttempts: transport.allowAutomaticRetry ? execution.upstreamRetryAttempts : 0,
+            maxExtraAttempts:
+              transport.allowAutomaticRetry && transport.allowSameTargetRetry !== false
+                ? execution.upstreamRetryAttempts
+                : 0,
             isRetry: false,
             requestLifecycle: execution.requestLifecycle,
             segmentFastPathEnabled,
@@ -23366,7 +23372,10 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
             allowAutomaticRetry: transport.allowAutomaticRetry,
             stripAuthOnProtocolFallback: execution.requestTraits.canStripAuthOnProtocolFallback,
             upstreamTimeoutMs: execution.upstreamTimeoutMs,
-            maxExtraAttempts: transport.allowAutomaticRetry ? execution.upstreamRetryAttempts : 0,
+            maxExtraAttempts:
+              transport.allowAutomaticRetry && transport.allowSameTargetRetry !== false
+                ? execution.upstreamRetryAttempts
+                : 0,
             isRetry: false,
             requestLifecycle: execution.requestLifecycle,
           });
@@ -27172,7 +27181,11 @@ function defineProxyFailoverStateMethods(dependencies = {}, kernel = {}) {
           eligible: false,
           reason: "disabled",
         };
-      if (execution.requestMethod !== "GET" && execution.requestMethod !== "HEAD")
+      if (
+        execution.requestMethod !== "GET" &&
+        execution.requestMethod !== "HEAD" &&
+        execution?.requestTraits?.isPlaybackInfoRequest !== true
+      )
         return {
           eligible: false,
           reason: "non_idempotent",
@@ -28154,7 +28167,11 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
           preparedBodyMode = "stream";
         }
       }
-      const retryTargetRecords = isNonIdempotent ? targetRecords.slice(0, 1) : targetRecords;
+      // PlaybackInfo 是只读 POST：body 可重放时允许跨 target 故障切换（不重放同一 target）。
+      const playbackInfoRetryable =
+        requestTraits?.isPlaybackInfoRequest === true && preparedBodyMode !== "stream";
+      const allowTargetFailover = !isNonIdempotent || playbackInfoRetryable;
+      const retryTargetRecords = allowTargetFailover ? targetRecords : targetRecords.slice(0, 1);
       return {
         newHeaders,
         adminCustomHeaders,
@@ -28163,7 +28180,8 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
         preparedBodyMode,
         preparedBodyText,
         retryTargetRecords,
-        allowAutomaticRetry: !isNonIdempotent,
+        allowAutomaticRetry: allowTargetFailover,
+        allowSameTargetRetry: !isNonIdempotent,
         clientRedirectAuthPolicy: evaluateMediaClientRedirectAuthPolicy(newHeaders),
       };
     },
