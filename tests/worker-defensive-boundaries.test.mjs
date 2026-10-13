@@ -7299,7 +7299,6 @@ test("PlaybackInfo cache evicts legacy invalid entries before delivery", async (
       statusText: "OK",
       headers: [["Content-Type", fixture.contentType]],
       bodyText: fixture.bodyText,
-      bodyBytes: 1,
       expiresAt: Date.now() + 60000,
     });
 
