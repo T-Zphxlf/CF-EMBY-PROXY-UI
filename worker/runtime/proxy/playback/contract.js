@@ -71,7 +71,11 @@ export async function inspectPlaybackInfoResponse(response, options = {}) {
   if (!isJsonHttpMediaType(response.headers.get("Content-Type")))
     return invalidResult(response, "unsupported_content_type");
   const bodyResult = await readResponseTextWithLimit(response.clone(), options.maxBytes);
-  if (bodyResult.exceeded) return invalidResult(response, "body_too_large");
+  if (bodyResult.exceeded) {
+    // 只有真正超过上限才算 body_too_large；body 读取中断是另一种失败，仍需报错。
+    const exceededLimit = Number(bodyResult.bytes) > Number(options.maxBytes);
+    return invalidResult(response, exceededLimit ? "body_too_large" : "body_read_failed");
+  }
   const payload = parsePlaybackInfoRootObject(bodyResult.text);
   if (!payload) return invalidResult(response, "invalid_root_object");
   return Object.freeze({

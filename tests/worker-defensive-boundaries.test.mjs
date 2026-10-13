@@ -6977,9 +6977,10 @@ test("oversized PlaybackInfo responses are not retained in isolate memory", asyn
 });
 
 test(
-  "oversized PlaybackInfo objects are rejected by the contract guard",
+  "oversized PlaybackInfo objects bypass the contract guard instead of failing playback",
   { timeout: 2000 },
   async () => {
+    isolateState.PlaybackInfoResponseCache.clear();
     const oversizedBody = JSON.stringify({
       padding: "x".repeat(Config.Defaults.PlaybackInfoCacheEntryMaxBytes + 1),
     });
@@ -6994,10 +6995,12 @@ test(
       playbackInfoRewrite: "",
     };
     const result = await proxyService.maybeRewritePlaybackInfoResponse(execution, upstreamState);
-    assert.equal(result.response.status, 502);
-    assert.equal(execution.playbackInfoRewrite, "rejected");
-    assert.equal(result.response.headers.get("X-Proxy-Contract-Guard"), "playback-info");
-    assert.equal((await result.response.json()).details.reason, "body_too_large");
+    assert.equal(result, upstreamState);
+    assert.equal(result.response.status, 200);
+    assert.equal(execution.playbackInfoRewrite, "skipped_oversized");
+    assert.equal(result.response.headers.get("X-Proxy-Contract-Guard"), null);
+    assert.equal(await result.response.text(), oversizedBody);
+    assert.equal(isolateState.PlaybackInfoResponseCache.size, 0);
   },
 );
 
@@ -7113,7 +7116,7 @@ test("valid PlaybackInfo passthrough keeps the original response unchanged", asy
   assert.equal(await result.response.text(), bodyText);
 });
 
-test("PlaybackInfo rejects unsupported MIME and oversized responses as structured JSON", async () => {
+test("PlaybackInfo rejects unsupported MIME as structured JSON and passes oversized bodies through", async () => {
   const makeExecution = () => ({
     requestTraits: { isPlaybackInfoRequest: true },
     effectivePlaybackInfoMode: "passthrough",
@@ -7140,9 +7143,10 @@ test("PlaybackInfo rejects unsupported MIME and oversized responses as structure
     oversizedExecution,
     oversizedState,
   );
-  assert.equal(oversizedResult.response.status, 502);
-  assert.equal(oversizedExecution.playbackInfoRewrite, "rejected");
-  assert.equal((await oversizedResult.response.json()).details.reason, "body_too_large");
+  assert.equal(oversizedResult, oversizedState);
+  assert.equal(oversizedResult.response.status, 200);
+  assert.equal(oversizedExecution.playbackInfoRewrite, "skipped_oversized");
+  assert.equal(await oversizedResult.response.text(), oversizedBody);
 });
 
 test("PlaybackInfo rejects double-encoded and text/plain JSON objects", async () => {
