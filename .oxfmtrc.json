@@ -13,6 +13,8 @@
     ".github/**",
     "**/*.yml",
     "**/*.yaml",
-    "**/*.toml"
+    "**/*.toml",
+    "logs-*.json",
+    "trace-*.json"
   ]
 }
