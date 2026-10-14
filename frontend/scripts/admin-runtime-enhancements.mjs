@@ -1236,7 +1236,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       reason,
       statusCode: Number.isInteger(statusCode) && statusCode >= 100 && statusCode <= 599 ? statusCode : null,
       elapsedMs,
-      methodUsed: methodUsed === 'HEAD' || methodUsed === 'GET' ? methodUsed : null,
+      methodUsed: methodUsed === 'HEAD' || methodUsed === 'GET' || methodUsed === 'TCP' ? methodUsed : null,
       probePath: normalizeHeadProbePath(source.probePath || fallbackPath)
     };
   }
@@ -1266,7 +1266,11 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     const probe = normalizeHeadProbeResult(value);
     const elapsed = probe.elapsedMs === null ? '' : ' · ' + probe.elapsedMs + ' ms';
     if (probe.ok) return probe.elapsedMs === null ? '--' : probe.elapsedMs + ' ms';
-    if (probe.reason === 'http_error') return 'HTTP ' + (probe.statusCode || '错误') + elapsed;
+    if (probe.reason === 'http_error') {
+      // 403 表示探测被 WAF 拦截且 TCP 兜底也没连上：只给红色提示，不带状态码和 GET 耗时。
+      if (probe.statusCode === 403) return '线路异常';
+      return 'HTTP ' + (probe.statusCode || '错误') + elapsed;
+    }
     if (probe.reason === 'timeout') return '超时' + elapsed;
     if (probe.reason === 'tls_error') return 'TLS 错误' + elapsed;
     if (probe.reason === 'invalid_target') return '目标无效';
