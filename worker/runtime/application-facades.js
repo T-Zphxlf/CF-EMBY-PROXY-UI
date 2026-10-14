@@ -2231,6 +2231,12 @@ var DEFAULT_UPSTREAM_TIMEOUT_MS = PROXY_DEFAULTS.UpstreamTimeoutMs;
 var DEFAULT_UPSTREAM_RETRY_ATTEMPTS = PROXY_DEFAULTS.UpstreamRetryAttempts;
 var DEFAULT_HEDGE_PROBE_PATH = PROXY_DEFAULTS.HedgeProbePath;
 var DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1 = "/emby/system/info/public";
+var PROBE_USER_AGENT = "Hills/1.10.0 (android; 16)";
+function resolveProbeUserAgent(userAgent = "") {
+  return String(userAgent || "").trim() || PROBE_USER_AGENT;
+}
+var SOURCE_FETCH_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 var DEFAULT_HEDGE_PROBE_TIMEOUT_MS = PROXY_DEFAULTS.HedgeProbeTimeoutMs;
 var DEFAULT_HEDGE_PROBE_PARALLELISM = PROXY_DEFAULTS.HedgeProbeParallelism;
 var DEFAULT_HEDGE_WAIT_TIMEOUT_MS = PROXY_DEFAULTS.HedgeWaitTimeoutMs;
@@ -13602,6 +13608,7 @@ async function fetchDnsIpItemsFromUrlSource(
   const timeoutId = setTimeout(() => controller.abort(), DNS_IP_SOURCE_TIMEOUT_MS);
   try {
     const res = await fetchRequest(targetUrl, {
+      headers: { "User-Agent": SOURCE_FETCH_USER_AGENT },
       redirect: "follow",
       signal: controller.signal,
     });
@@ -14917,7 +14924,8 @@ function defineNotificationActions(dependencies = {}, actions = {}) {
         return jsonError("ALERT_PREDICT_FAILED", e.message);
       }
     },
-    async pingNode(data, { env, ctx }) {
+    async pingNode(data, { env, ctx, request }) {
+      const inboundUserAgent = String(request?.headers?.get("User-Agent") || "").trim();
       const currentConfig = await getRuntimeConfig(env);
       const timeoutMs = clampIntegerConfig(
         data.timeout,
@@ -14929,7 +14937,9 @@ function defineNotificationActions(dependencies = {}, actions = {}) {
         const normalizedTarget = kernel.normalizeSingleTarget(data.target);
         if (!normalizedTarget)
           return jsonError("INVALID_TARGET", "目标源站必须是有效的 http/https URL");
-        const probe = await kernel.pingTarget(normalizedTarget, timeoutMs);
+        const probe = await kernel.pingTarget(normalizedTarget, timeoutMs, {
+          userAgent: inboundUserAgent,
+        });
         return jsonResponse({
           ...(probe.ok ? { ms: probe.elapsedMs } : {}),
           probe,
@@ -14950,7 +14960,9 @@ function defineNotificationActions(dependencies = {}, actions = {}) {
         return jsonError("LINE_NOT_FOUND", "线路不存在", 404);
       const probedLines = await Promise.all(
         linesToProbe.map(async (line) => {
-          const probe = await kernel.pingTarget(line.target, timeoutMs);
+          const probe = await kernel.pingTarget(line.target, timeoutMs, {
+            userAgent: inboundUserAgent,
+          });
           return {
             id: String(line?.id || "").trim(),
             name: String(line?.name || "").trim(),
@@ -21129,7 +21141,7 @@ function defineNodeMutationMethods(dependencies = {}, kernel = {}) {
 //#region worker/features/nodes/node-repository-methods.js
 function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
   return {
-    async pingTarget(target, timeoutMs) {
+    async pingTarget(target, timeoutMs, options = {}) {
       const startedAt = nowMs();
       const probePath = DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1;
       const buildResult = (result = {}) => ({
@@ -21155,6 +21167,7 @@ function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
       try {
         const response = await fetchRequest(probeUrl.toString(), {
           method: "GET",
+          headers: { "User-Agent": resolveProbeUserAgent(options?.userAgent) },
           signal: controller.signal,
         });
         const statusCode = Number(response.status);
@@ -27624,14 +27637,22 @@ function defineProxyFailoverStateMethods(dependencies = {}, kernel = {}) {
 //#region worker/features/proxy/routing/failover-probe-methods.js
 function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
   return {
-    buildFailoverProbeHeaders() {
+    buildFailoverProbeHeaders(userAgent = "") {
       return new Headers({
         Accept: "*/*",
         "Cache-Control": "no-store",
+        "User-Agent": resolveProbeUserAgent(userAgent),
         Pragma: "no-cache",
       });
     },
-    async performFailoverProbeRequest(execution, probeUrl, method, timeoutMs, parentSignal = null) {
+    async performFailoverProbeRequest(
+      execution,
+      probeUrl,
+      method,
+      timeoutMs,
+      parentSignal = null,
+      userAgentOverride = null,
+    ) {
       const linked = createLinkedAbortController([
         execution?.request?.signal,
         execution?.requestLifecycle?.signal,
@@ -27647,7 +27668,9 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           }, timeoutMs);
         return await fetchRequest(probeUrl.toString(), {
           method,
-          headers: kernel.buildFailoverProbeHeaders(),
+          headers: kernel.buildFailoverProbeHeaders(
+            userAgentOverride ?? execution?.request?.headers?.get("User-Agent"),
+          ),
           redirect: "manual",
           signal: linked.signal,
         });
@@ -27709,6 +27732,22 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
             "GET",
             probeTimeoutMs,
             options.parentSignal || null,
+          );
+        }
+        const inboundUserAgent = String(
+          execution?.request?.headers?.get("User-Agent") || "",
+        ).trim();
+        if (response.status === 403 && inboundUserAgent && inboundUserAgent !== PROBE_USER_AGENT) {
+          try {
+            response.body?.cancel?.();
+          } catch {}
+          response = await kernel.performFailoverProbeRequest(
+            execution,
+            probeUrl,
+            methodUsed,
+            probeTimeoutMs,
+            options.parentSignal || null,
+            PROBE_USER_AGENT,
           );
         }
         const elapsedMs = Math.max(0, nowMs() - startedAt);
@@ -37189,6 +37228,7 @@ export {
   createTargetRecord,
   createWorkerApplication,
   databaseReadinessState,
+  fetchDnsIpItemsFromUrlSource,
   fetchRequest,
   getDueScheduledClockSlots,
   getRuntimeConfig,

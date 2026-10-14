@@ -19,6 +19,7 @@ import {
   buildWorkerMetadataCacheLookupRequest,
   buildWorkerMetadataCachePolicyRevision,
   buildWorkerMetadataPrewarmIdentityPartition,
+  fetchDnsIpItemsFromUrlSource,
   createTargetRecord,
   convertTmdbRequestFromUrl,
   createWorkerApplication,
@@ -458,7 +459,11 @@ test("node probes preserve target base paths and require a successful response",
   await withWorkerGlobals(
     {
       fetch: async (url, init = {}) => {
-        requests.push({ url: String(url), method: String(init.method || "GET") });
+        requests.push({
+          url: String(url),
+          method: String(init.method || "GET"),
+          userAgent: new Headers(init.headers).get("User-Agent"),
+        });
         return new Response(null, { status: responses.shift() });
       },
     },
@@ -484,17 +489,97 @@ test("node probes preserve target base paths and require a successful response",
       assert.equal(unavailable.methodUsed, "GET");
     },
   );
-  assert.deepEqual(requests, [
-    { url: "https://origin.example/emby/system/info/public", method: "GET" },
-    { url: "https://origin.example/emby/system/info/public", method: "GET" },
-    { url: "https://origin.example/emby/system/info/public", method: "GET" },
-  ]);
+  assert.deepEqual(
+    requests.map(({ url, method }) => ({ url, method })),
+    [
+      { url: "https://origin.example/emby/system/info/public", method: "GET" },
+      { url: "https://origin.example/emby/system/info/public", method: "GET" },
+      { url: "https://origin.example/emby/system/info/public", method: "GET" },
+    ],
+  );
+  assert.ok(requests.every((request) => (request.userAgent || "").startsWith("Hills/")));
+});
+
+test("node GET probes follow the provided inbound User-Agent", async () => {
+  const requests = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        requests.push(new Headers(init.headers).get("User-Agent"));
+        return new Response(null, { status: 200 });
+      },
+    },
+    async () => {
+      await kernel.pingTarget("https://origin.example", 1000, { userAgent: "Inbound/9" });
+    },
+  );
+  assert.deepEqual(requests, ["Inbound/9"]);
+});
+
+test("admin pingNode forwards the inbound User-Agent to the node probe", async () => {
+  const { kv } = createInMemoryKvStore();
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `ping-ua-${Date.now()}` };
+  const calls = [];
+  const originalPingTarget = kernel.pingTarget;
+  kernel.pingTarget = async (_target, _timeoutMs, options = {}) => {
+    calls.push(options);
+    return {
+      ok: true,
+      reason: "ok",
+      statusCode: 200,
+      elapsedMs: 1,
+      methodUsed: "GET",
+      probePath: "/emby/system/info/public",
+    };
+  };
+  try {
+    await adminActions.pingNode(
+      { target: "https://origin.example", timeout: 1000 },
+      {
+        env,
+        ctx: { waitUntil() {} },
+        request: new Request("https://admin.example/admin", {
+          method: "POST",
+          headers: { "User-Agent": "Inbound/9" },
+        }),
+      },
+    );
+  } finally {
+    kernel.pingTarget = originalPingTarget;
+  }
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].userAgent, "Inbound/9");
+});
+
+test("DNS IP source fetches identify as a browser client", async () => {
+  const requests = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        requests.push({
+          url: String(url),
+          userAgent: new Headers(init.headers).get("User-Agent"),
+        });
+        return new Response("1.2.3.4\n5.6.7.8", { status: 200 });
+      },
+    },
+    async () => {
+      await fetchDnsIpItemsFromUrlSource(
+        { url: "https://source.example/list", sourceType: "url" },
+        4096,
+      );
+    },
+  );
+  assert.equal(requests.length, 1);
+  assert.ok((requests[0].userAgent || "").startsWith("Mozilla/"));
 });
 
 test("failover probes prefer GET by default and retain the optional HEAD fallback", async () => {
   assert.equal(Config.Defaults.HedgeProbePreferGet, true);
   assert.equal(sanitizeRuntimeConfig({}).hedgeProbePreferGet, true);
   assert.equal(sanitizeRuntimeConfig({ hedgeProbePreferGet: false }).hedgeProbePreferGet, false);
+  assert.ok(proxyService.buildFailoverProbeHeaders().get("User-Agent").startsWith("Hills/"));
+  assert.equal(proxyService.buildFailoverProbeHeaders("Inbound/9").get("User-Agent"), "Inbound/9");
   const originalProbeRequest = proxyService.performFailoverProbeRequest;
   const requests = [];
   proxyService.performFailoverProbeRequest = async (_execution, probeUrl, method) => {
@@ -533,6 +618,60 @@ test("failover probes prefer GET by default and retain the optional HEAD fallbac
   } finally {
     proxyService.performFailoverProbeRequest = originalProbeRequest;
   }
+});
+
+test("failover probe requests carry the inbound User-Agent", async () => {
+  const captured = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        captured.push(new Headers(init.headers).get("User-Agent"));
+        return new Response(null, { status: 204 });
+      },
+    },
+    async () => {
+      await proxyService.performFailoverProbeRequest(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+        },
+        new URL("https://origin.example/emby/system/ping"),
+        "GET",
+        1000,
+      );
+    },
+  );
+  assert.deepEqual(captured, ["Inbound/9"]);
+});
+
+test("failover probes retry with the fallback User-Agent when the inbound User-Agent is rejected", async () => {
+  const attempts = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        const userAgent = new Headers(init.headers).get("User-Agent");
+        attempts.push(userAgent);
+        return new Response(null, { status: userAgent === "Inbound/9" ? 403 : 204 });
+      },
+    },
+    async () => {
+      const result = await proxyService.runFailoverProbeCandidate(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+          failoverContext: { probePath: "/emby/system/ping", probeTimeoutMs: 1000 },
+        },
+        createTargetRecord("https://origin.example/emby"),
+      );
+      assert.equal(result.ok, true);
+      assert.equal(result.status, 204);
+    },
+  );
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0], "Inbound/9");
+  assert.ok(attempts[1].startsWith("Hills/"));
 });
 
 test("node GET probes use the fixed public-info path with a ten second default", async () => {
