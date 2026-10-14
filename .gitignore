@@ -16,3 +16,5 @@ prompts/
 banker/
 .admin-ui.from-*.html
 frontend/.admin-runtime-sync.json
+logs-*.json
+trace-*.json

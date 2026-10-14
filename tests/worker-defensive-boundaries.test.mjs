@@ -45,6 +45,7 @@ import {
   resetRuntimeBindingStates,
   sanitizeRuntimeConfig,
   serializeBoundedLogDetailJson,
+  serveMedbItemsCounts,
 } from "../worker/runtime/application-facades.js";
 import { inspectPlaybackInfoResponse } from "../worker/runtime/proxy/playback/contract.js";
 
@@ -672,6 +673,37 @@ test("failover probes retry with the fallback User-Agent when the inbound User-A
   assert.equal(attempts.length, 2);
   assert.equal(attempts[0], "Inbound/9");
   assert.ok(attempts[1].startsWith("Hills/"));
+});
+
+test("failover probes skip the fallback retry when the remaining wait budget is too small", async () => {
+  const attempts = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url, init = {}) => {
+        attempts.push(new Headers(init.headers).get("User-Agent"));
+        return new Response(null, { status: 403 });
+      },
+    },
+    async () => {
+      const result = await proxyService.runFailoverProbeCandidate(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+          failoverContext: {
+            probePath: "/emby/system/ping",
+            probeTimeoutMs: 1000,
+            waitTimeoutMs: 200,
+          },
+        },
+        createTargetRecord("https://origin.example/emby"),
+      );
+      assert.equal(result.ok, false);
+      assert.equal(result.status, 403);
+      assert.equal(result.reason, "probe_status_403");
+    },
+  );
+  assert.deepEqual(attempts, ["Inbound/9"]);
 });
 
 test("node GET probes use the fixed public-info path with a ten second default", async () => {
@@ -3172,6 +3204,98 @@ test("TMDB provider id search skips episode and season lookups", async () => {
       assert.equal(fetchCount, 0);
     },
   );
+});
+
+test("medb list counts replace the emos node /emby/Items/Counts response", async () => {
+  isolateState.MedbItemsCountsCache.clear();
+  const fetched = [];
+  const counts = { movie: 12, series: 3, episode: 45, tv: 9 };
+  const expectedCounts = { MovieCount: 12, SeriesCount: 3, EpisodeCount: 45 };
+  const fetchCounts = async (url, init = {}) => {
+    fetched.push({ url: String(url), accept: new Headers(init.headers).get("accept") });
+    return new Response(JSON.stringify({ items: [{ counts }] }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const node = {
+    activeLineId: "line-1",
+    lines: [{ id: "line-1", target: "https://video.emos.best" }],
+  };
+  await withWorkerGlobals({ fetch: fetchCounts }, async () => {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await serveMedbItemsCounts(
+        new Request("https://worker.test/emos/emby/Items/Counts", { method: "GET" }),
+        {},
+        node,
+        "emos",
+        "/emby/Items/Counts",
+      );
+      assert.equal(response.status, 200);
+      assert.match(response.headers.get("Content-Type") || "", /application\/json/);
+      assert.deepEqual(await response.json(), expectedCounts);
+    }
+  });
+  assert.deepEqual(fetched, [
+    { url: "https://medb.lat/media/list/index?page_size=1", accept: "application/json" },
+  ]);
+});
+
+test("medb counts stay out of unrelated nodes, paths, and methods", async () => {
+  isolateState.MedbItemsCountsCache.clear();
+  let fetchCount = 0;
+  await withWorkerGlobals(
+    {
+      fetch: async () => {
+        fetchCount += 1;
+        return new Response(JSON.stringify({ items: [{ counts: { movie: 1 } }] }), {
+          status: 200,
+        });
+      },
+    },
+    async () => {
+      const emosNode = {
+        activeLineId: "line-1",
+        lines: [{ id: "line-1", target: "https://video.emos.best" }],
+      };
+      const otherNode = {
+        activeLineId: "line-1",
+        lines: [{ id: "line-1", target: "https://other.example" }],
+      };
+      const build = (path, method = "GET") => new Request(`https://worker.test${path}`, { method });
+      assert.equal(
+        await serveMedbItemsCounts(
+          build("/emby/Items/Counts"),
+          {},
+          otherNode,
+          "other",
+          "/emby/Items/Counts",
+        ),
+        null,
+      );
+      assert.equal(
+        await serveMedbItemsCounts(
+          build("/emby/System/Info"),
+          {},
+          emosNode,
+          "emos",
+          "/emby/System/Info",
+        ),
+        null,
+      );
+      assert.equal(
+        await serveMedbItemsCounts(
+          build("/emby/Items/Counts", "POST"),
+          {},
+          emosNode,
+          "emos",
+          "/emby/Items/Counts",
+        ),
+        null,
+      );
+    },
+  );
+  assert.equal(fetchCount, 0);
 });
 
 test("node normalization keeps the TMDB aggregation flag as a strict boolean", () => {

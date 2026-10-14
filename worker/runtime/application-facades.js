@@ -96,6 +96,7 @@ var cacheState = {
   PlaybackProgressRelay: /* @__PURE__ */ new Map(),
   MetadataPrewarmTasks: /* @__PURE__ */ new Map(),
   TmdbLookupCache: /* @__PURE__ */ new Map(),
+  MedbItemsCountsCache: /* @__PURE__ */ new Map(),
   DashboardMonthlyTrafficCache: /* @__PURE__ */ new Map(),
   SingleFlightTasks: /* @__PURE__ */ new Map(),
   AdminRemoteShellCacheMutationChains: /* @__PURE__ */ new Map(),
@@ -23947,6 +23948,8 @@ function defineProxyHandlerDeliveryMethods(dependencies = {}, kernel = {}) {
         );
         return buildEmbyWebProxyDisabledResponse(request.method, dynamicCors);
       }
+      const medbItemsCountsResponse = await serveMedbItemsCounts(request, env, node, name, path);
+      if (medbItemsCountsResponse) return medbItemsCountsResponse;
       let execution = await kernel.prepareExecutionContext(
         request,
         node,
@@ -27738,17 +27741,25 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           execution?.request?.headers?.get("User-Agent") || "",
         ).trim();
         if (response.status === 403 && inboundUserAgent && inboundUserAgent !== PROBE_USER_AGENT) {
-          try {
-            response.body?.cancel?.();
-          } catch {}
-          response = await kernel.performFailoverProbeRequest(
-            execution,
-            probeUrl,
-            methodUsed,
-            probeTimeoutMs,
-            options.parentSignal || null,
-            PROBE_USER_AGENT,
-          );
+          // The retry shares the foreground wait budget; clamp to it and skip when nothing is left.
+          const waitBudgetMs = Number(failoverContext?.waitTimeoutMs) || 0;
+          const retryTimeoutMs =
+            waitBudgetMs > 0
+              ? Math.min(probeTimeoutMs, waitBudgetMs - (nowMs() - startedAt))
+              : probeTimeoutMs;
+          if (retryTimeoutMs >= 250) {
+            try {
+              response.body?.cancel?.();
+            } catch {}
+            response = await kernel.performFailoverProbeRequest(
+              execution,
+              probeUrl,
+              methodUsed,
+              retryTimeoutMs,
+              options.parentSignal || null,
+              PROBE_USER_AGENT,
+            );
+          }
         }
         const elapsedMs = Math.max(0, nowMs() - startedAt);
         const probeStatus = Number(response.status) || 0;
@@ -37028,6 +37039,79 @@ function attachApplicationServices(kernel, services) {
   }
   return kernel;
 }
+//#region worker/features/proxy/medb-counts.js
+var MEDB_COUNTS_HOST = "video.emos.best";
+var MEDB_COUNTS_NODE_NAME = "emos";
+var MEDB_COUNTS_URL = "https://medb.lat/media/list/index?page_size=1";
+var MEDB_COUNTS_CACHE_TTL_MS = 60 * 1e3;
+var MEDB_COUNTS_TIMEOUT_MS = 5e3;
+// medb 列表接口把统计放在 counts 字段；同时兼容包一层 data 的返回。
+function extractMedbItemsCounts(payload) {
+  const counts = isPlainObject(payload?.items?.[0]?.counts)
+    ? payload.items[0].counts
+    : isPlainObject(payload?.counts)
+      ? payload.counts
+      : null;
+  if (!counts) return null;
+  // medb 的 movie/series/episode 映射为 Emby Items/Counts 的字段名。
+  return {
+    MovieCount: counts.movie ?? 0,
+    SeriesCount: counts.series ?? 0,
+    EpisodeCount: counts.episode ?? 0,
+  };
+}
+async function fetchMedbItemsCounts() {
+  const cached = cacheState.MedbItemsCountsCache.get(MEDB_COUNTS_URL);
+  if (cached && cached.expiresAt > nowMs()) return cached.counts;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort("medb_counts_timeout"),
+    MEDB_COUNTS_TIMEOUT_MS,
+  );
+  try {
+    const response = await fetch(MEDB_COUNTS_URL, {
+      headers: { accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const counts = extractMedbItemsCounts(await response.json());
+    if (!counts) return null;
+    cacheState.MedbItemsCountsCache.set(MEDB_COUNTS_URL, {
+      counts,
+      expiresAt: nowMs() + MEDB_COUNTS_CACHE_TTL_MS,
+    });
+    return counts;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+function isMedbCountsNode(node, name) {
+  if (
+    String(name || "")
+      .trim()
+      .toLowerCase() === MEDB_COUNTS_NODE_NAME
+  )
+    return true;
+  for (const line of Array.isArray(node?.lines) ? node.lines : []) {
+    const target = String(line?.target || "").trim();
+    if (!target) continue;
+    try {
+      if (normalizeHostnameText(new URL(target).hostname) === MEDB_COUNTS_HOST) return true;
+    } catch {}
+  }
+  return false;
+}
+async function serveMedbItemsCounts(request, env, node, name, path) {
+  if (request.method !== "GET") return null;
+  if (String(sanitizeProxyPath(path)).replace(/\/+$/, "").toLowerCase() !== "/emby/items/counts")
+    return null;
+  if (!isMedbCountsNode(node, name)) return null;
+  const counts = await fetchMedbItemsCounts();
+  return counts ? jsonResponse(counts, 200, getCorsHeadersForResponse(env, request)) : null;
+}
+//#endregion
 /**
  * Compose the three public workflow facades and the frozen Cloudflare handler.
  */
@@ -37253,4 +37337,5 @@ export {
   sanitizeRuntimeConfig,
   serializeBoundedJson as serializeBoundedLogDetailJson,
   shouldUseSegmentFastUpstreamBuilder,
+  serveMedbItemsCounts,
 };
