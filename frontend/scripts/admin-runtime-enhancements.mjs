@@ -1648,7 +1648,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
           ? this.nodes.find((item) => this.normalizeNodeKey(item?.name) === this.normalizeNodeKey(nodeOrName))
           : nodeOrName;
         const activeLine = this.getActiveNodeLine(node);
-        const target = String(activeLine?.target || '').trim();
+        const target = this.getNodeModalLineResolvedTarget(activeLine) || '';
         const request = target
           ? { target, timeout, forceRefresh: true, probePath }
           : { ...this.buildActiveLinePingPayload(nodeOrName), timeout, forceRefresh: true, probePath };
@@ -1684,7 +1684,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
         const startedAt = Date.now();
         try {
           const activeLine = this.getActiveNodeLine(node);
-          const target = String(activeLine?.target || '').trim();
+          const target = this.getNodeModalLineResolvedTarget(activeLine) || '';
           const request = target
             ? { target, timeout, forceRefresh: true, probePath }
             : { ...this.buildActiveLinePingPayload(node), timeout, forceRefresh: true, probePath };

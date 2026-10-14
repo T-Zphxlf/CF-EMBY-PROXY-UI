@@ -90,6 +90,42 @@ test("config save enhancement adds an idempotency token", async () => {
   assert.equal(messages.length, 0);
 });
 
+test("node health probes carry the line port into the ping target", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const requests = [];
+  const line = { id: "line-1", target: "https://node.example", port: "8443" };
+  const node = { name: "alpha", lines: [line], activeLineId: "line-1" };
+  const app = {
+    nodes: [node],
+    nodeHealth: {},
+    normalizeNodeKey: (value) =>
+      String(value || "")
+        .trim()
+        .toLowerCase(),
+    getEffectiveSettingValue: () => 10000,
+    getActiveNodeLine: () => line,
+    getNodeModalLineResolvedTarget: (input) =>
+      input?.target ? `${input.target}:${input.port || ""}` : "",
+    buildActiveLinePingPayload: () => ({}),
+    beginNodePingRequest: () => "token",
+    finishNodePingRequest: () => {},
+    applyPingNodeResponse: () => {},
+    recordNodeHealthResult: () => {},
+    async apiCall(action, payload) {
+      requests.push({ action, payload });
+      return { probe: { ok: true, reason: "ok", elapsedMs: 5, methodUsed: "GET" } };
+    },
+  };
+  patchSafetyContractMethods(app);
+  app.applyPingNodeResponse = () => {};
+
+  await app.checkSingleNodeHealth(node);
+  await app.checkAllNodesHealth();
+
+  assert.match(requests[0].payload.target, /:8443$/);
+  assert.match(requests[1].payload.target, /:8443$/);
+});
+
 test("host-prefix node links follow the effective runtime mode and strict hostname", async () => {
   const { normalizeHostPrefixDnsHostname, patchSafetyContractMethods } = loadEnhancementTestHooks(
     {},
