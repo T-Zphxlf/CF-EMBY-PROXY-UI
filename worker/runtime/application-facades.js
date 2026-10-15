@@ -20424,11 +20424,20 @@ function buildMediaAuthorizationFromToken(scheme, token = "") {
   return `${scheme === "emby" ? "Emby" : "MediaBrowser"} Token="${safeToken}"`;
 }
 var QUERY_MEDIA_AUTH_TOKEN_KEYS = ["api_key", "ApiKey", "X-Emby-Token", "X-MediaBrowser-Token"];
+// 查询参数可携带 CR/LF 或非 Latin-1 字符，直接写进请求头会抛异常；这类值不是合法 token，忽略。
+function isSafeMediaAuthTokenValue(value = "") {
+  for (const char of value) {
+    const code = char.codePointAt(0);
+    // 只接受可安全写进请求头的区间（拒绝控制字符与非 Latin-1）。
+    if (code < 0x20 || code > 0xff) return false;
+  }
+  return true;
+}
 function extractQueryMediaAuthToken(requestUrl) {
   if (!(requestUrl instanceof URL)) return "";
   for (const key of QUERY_MEDIA_AUTH_TOKEN_KEYS) {
     const value = String(requestUrl.searchParams.get(key) || "").trim();
-    if (value) return value;
+    if (value && isSafeMediaAuthTokenValue(value)) return value;
   }
   return "";
 }

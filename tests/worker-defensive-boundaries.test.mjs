@@ -3021,6 +3021,23 @@ test("proxy request state synthesizes authorization from a query token", async (
   );
 });
 
+test("proxy request state ignores query tokens that are unsafe for request headers", async () => {
+  const request = new Request("https://worker.test/Videos/1/stream?api_key=a%0D%0Ab");
+  const transport = await proxyService.buildProxyRequestState(
+    request,
+    { mediaAuthMode: "auto" },
+    "/Videos/1/stream",
+    new URL(request.url),
+    "203.0.113.1",
+    {},
+    false,
+    [],
+    {},
+  );
+  // CR/LF 的查询值不是合法 token：既不合成 Authorization，也不应抛异常。
+  assert.equal(transport.newHeaders.has("Authorization"), false);
+});
+
 test("TMDB provider id search converts to a title and year request", async () => {
   isolateState.TmdbLookupCache.clear();
   const fetched = [];
