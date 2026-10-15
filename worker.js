@@ -3685,7 +3685,7 @@ function ud(o = {}, e = {}) {
   }
   function i(E = "", D = "", A = "") {
     const x = new URL(`/${encodeURIComponent(mt(E) || "release")}/${encodeURIComponent(String(D || "").trim())}`, e.ADMIN_RELEASE_VENDOR_CACHE_KEY_ORIGIN);
-    return x.searchParams.set("source", ne(String(A || "").trim())), new Request(x.toString(), { method: "GET" });
+    return x.searchParams.set("source", ne(String(A || "").trim())), x.searchParams.set("schema", "2"), new Request(x.toString(), { method: "GET" });
   }
   function c(E = {}, D = "") {
     const A = new Headers({

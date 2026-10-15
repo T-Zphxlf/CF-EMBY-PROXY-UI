@@ -4408,6 +4408,8 @@ function defineAdminShellCache(dependencies = {}, shell = {}) {
       shell.ADMIN_RELEASE_VENDOR_CACHE_KEY_ORIGIN,
     );
     cacheUrl.searchParams.set("source", hashStableText(String(sourceUrl || "").trim()));
+    // schema 版本：剥离 body 等行为变化后，旧的 edge 缓存 key 不再命中，从而自动失效。
+    cacheUrl.searchParams.set("schema", "2");
     return new Request(cacheUrl.toString(), { method: "GET" });
   }
   function buildAdminReleaseVendorManifestResponse(manifest = {}, sourceUrl = "") {
