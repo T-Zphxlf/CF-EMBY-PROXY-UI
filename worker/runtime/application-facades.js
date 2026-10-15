@@ -16010,9 +16010,12 @@ function buildProbeUpstreamUrl(targetBase, probePath = "/") {
   return buildUpstreamProxyUrl(targetRecord, relativeProbePath);
 }
 var PROBE_ROOT_PREFIX_PATTERN = /^\/(?:emby|mediabrowser)(?=\/)/i;
+var PROBE_ROOT_ONLY_PATTERN = /^\/(?:emby|mediabrowser)$/i;
 function expandProbePathRootVariants(probePath = "/") {
   const normalized = sanitizeProxyPath(probePath);
   if (!normalized || normalized === "/") return [normalized || "/"];
+  // 探测路径本身就是一个根前缀（如 "/emby"）时，无前缀变体是站点根 "/"。
+  if (PROBE_ROOT_ONLY_PATTERN.test(normalized)) return [normalized, "/"];
   const stripped = normalized.replace(PROBE_ROOT_PREFIX_PATTERN, "");
   if (stripped && stripped !== normalized) return [normalized, stripped];
   return [normalized, `/emby${normalized}`];

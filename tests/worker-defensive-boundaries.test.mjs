@@ -595,6 +595,63 @@ test("failover probes fall back to the Jellyfin root path when /emby is removed"
   ]);
 });
 
+test("failover probes fall back to the site root when the probe path is just a root prefix", async () => {
+  const requests = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response(null, {
+          status: String(url) === "https://origin.example/emby" ? 404 : 204,
+        });
+      },
+    },
+    async () => {
+      const result = await proxyService.runFailoverProbeCandidate(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+          failoverContext: { probePath: "/emby", probeTimeoutMs: 1000 },
+        },
+        createTargetRecord("https://origin.example"),
+      );
+      assert.equal(result.ok, true);
+      assert.equal(result.status, 204);
+    },
+  );
+  assert.deepEqual(requests, ["https://origin.example/emby", "https://origin.example/"]);
+});
+
+test("failover probes add the /emby root prefix for an unprefixed probe path", async () => {
+  const requests = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response(null, { status: String(url).includes("/emby/") ? 204 : 404 });
+      },
+    },
+    async () => {
+      const result = await proxyService.runFailoverProbeCandidate(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+          failoverContext: { probePath: "/system/ping", probeTimeoutMs: 1000 },
+        },
+        createTargetRecord("https://origin.example"),
+      );
+      assert.equal(result.ok, true);
+      assert.equal(result.status, 204);
+    },
+  );
+  assert.deepEqual(requests, [
+    "https://origin.example/system/ping",
+    "https://origin.example/emby/system/ping",
+  ]);
+});
+
 test("node GET probes follow the provided inbound User-Agent", async () => {
   const requests = [];
   await withWorkerGlobals(
