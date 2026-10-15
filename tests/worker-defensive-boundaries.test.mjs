@@ -455,7 +455,7 @@ test("node probes preserve target base paths and require a successful response",
     "https://origin.example/proxy/emby/emby/system/ping",
   );
 
-  const responses = [404, 204, 503];
+  const responses = [404, 503, 204, 403, 403];
   const requests = [];
   await withWorkerGlobals(
     {
@@ -469,11 +469,15 @@ test("node probes preserve target base paths and require a successful response",
       },
     },
     async () => {
+      // 主路径 404 后补打兜底路径 503：两条路径都不成功，按兜底路径的结果报失败。
       const notFound = await kernel.pingTarget("https://origin.example/emby", 1000);
       assert.equal(notFound.ok, false);
       assert.equal(notFound.reason, "http_error");
-      assert.equal(notFound.statusCode, 404);
+      assert.equal(notFound.statusCode, 503);
       assert.equal(notFound.methodUsed, "GET");
+      assert.equal(notFound.probePath, "/emby/system/ping");
+
+      // 主路径 204 就已成功，不再触发兜底请求。
       const success = await kernel.pingTarget("https://origin.example", 1000, {
         probePath: "/emby/system/ping",
       });
@@ -483,22 +487,60 @@ test("node probes preserve target base paths and require a successful response",
       assert.equal(success.methodUsed, "GET");
       assert.equal(success.probePath, "/emby/system/info/public");
       assert.ok(success.elapsedMs >= 0);
-      const unavailable = await kernel.pingTarget("https://origin.example/emby", 1000);
-      assert.equal(unavailable.ok, false);
-      assert.equal(unavailable.reason, "http_error");
-      assert.equal(unavailable.statusCode, 503);
-      assert.equal(unavailable.methodUsed, "GET");
+
+      // 两条路径都返回 403：403 只说明源站拦探测，节点仍然可达。
+      const forbidden = await kernel.pingTarget("https://origin.example/emby", 1000);
+      assert.equal(forbidden.ok, true);
+      assert.equal(forbidden.reason, "ok");
+      assert.equal(forbidden.statusCode, 403);
+      assert.equal(forbidden.methodUsed, "GET");
     },
   );
   assert.deepEqual(
     requests.map(({ url, method }) => ({ url, method })),
     [
       { url: "https://origin.example/emby/system/info/public", method: "GET" },
+      { url: "https://origin.example/emby/system/ping", method: "GET" },
       { url: "https://origin.example/emby/system/info/public", method: "GET" },
       { url: "https://origin.example/emby/system/info/public", method: "GET" },
+      { url: "https://origin.example/emby/system/ping", method: "GET" },
     ],
   );
   assert.ok(requests.every((request) => (request.userAgent || "").startsWith("Hills/")));
+});
+
+test("node and failover probes send a complete client header set", async () => {
+  const captured = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (_url, init = {}) => {
+        captured.push(Object.fromEntries(new Headers(init.headers).entries()));
+        return new Response(null, { status: 204 });
+      },
+    },
+    async () => {
+      await kernel.pingTarget("https://origin.example/emby", 1000, { userAgent: "Inbound/9" });
+      await proxyService.runFailoverProbeCandidate(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+          failoverContext: { probePath: "/emby/system/ping", probeTimeoutMs: 1000 },
+        },
+        createTargetRecord("https://origin.example/emby"),
+      );
+    },
+  );
+  assert.equal(captured.length, 2);
+  for (const headers of captured) {
+    assert.deepEqual(headers, {
+      accept: "*/*",
+      "accept-language": "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+      "cache-control": "no-store",
+      pragma: "no-cache",
+      "user-agent": "Inbound/9",
+    });
+  }
 });
 
 test("node GET probes follow the provided inbound User-Agent", async () => {
@@ -698,9 +740,9 @@ test("failover probes skip the fallback retry when the remaining wait budget is 
         },
         createTargetRecord("https://origin.example/emby"),
       );
-      assert.equal(result.ok, false);
+      // 等待预算不足所以跳过换 UA 重试；403 本身已经不算失败。
+      assert.equal(result.ok, true);
       assert.equal(result.status, 403);
-      assert.equal(result.reason, "probe_status_403");
     },
   );
   assert.deepEqual(attempts, ["Inbound/9"]);

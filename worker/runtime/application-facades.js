@@ -2232,9 +2232,21 @@ var DEFAULT_UPSTREAM_TIMEOUT_MS = PROXY_DEFAULTS.UpstreamTimeoutMs;
 var DEFAULT_UPSTREAM_RETRY_ATTEMPTS = PROXY_DEFAULTS.UpstreamRetryAttempts;
 var DEFAULT_HEDGE_PROBE_PATH = PROXY_DEFAULTS.HedgeProbePath;
 var DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1 = "/emby/system/info/public";
+var FALLBACK_NODE_LINE_HEAD_PROBE_PATH = "/emby/system/ping";
+var PROBE_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7";
 var PROBE_USER_AGENT = "Hills/1.10.0 (android; 16)";
 function resolveProbeUserAgent(userAgent = "") {
   return String(userAgent || "").trim() || PROBE_USER_AGENT;
+}
+function buildProbeRequestHeaders(userAgent = "") {
+  // 探测只带 UA 时容易被源站安全策略直接拦掉，这里补成常规客户端请求头。
+  return {
+    Accept: "*/*",
+    "Accept-Language": PROBE_ACCEPT_LANGUAGE,
+    "Cache-Control": "no-store",
+    Pragma: "no-cache",
+    "User-Agent": resolveProbeUserAgent(userAgent),
+  };
 }
 var SOURCE_FETCH_USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -13828,7 +13840,7 @@ async function probeDnsIpRoutingViaCloudflare(db, ip = "", entryColo = "UNKNOWN"
   const finalizedAt = /* @__PURE__ */ new Date().toISOString();
   try {
     const response = await fetchRequest(targetUrl, {
-      headers: { "user-agent": DNS_IP_PROBE_USER_AGENT },
+      headers: buildProbeRequestHeaders(DNS_IP_PROBE_USER_AGENT),
       method: "HEAD",
       redirect: "manual",
       signal: controller.signal,
@@ -21144,57 +21156,82 @@ function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
   return {
     async pingTarget(target, timeoutMs, options = {}) {
       const startedAt = nowMs();
-      const probePath = DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1;
+      const methodUsed = "GET";
       const buildResult = (result = {}) => ({
         ok: result.ok === true,
         reason: String(result.reason || "network_error"),
         statusCode: Number.isInteger(result.statusCode) ? result.statusCode : null,
-        elapsedMs: Math.max(0, nowMs() - startedAt),
+        elapsedMs: Number.isFinite(result.elapsedMs)
+          ? Math.max(0, Math.round(result.elapsedMs))
+          : Math.max(0, nowMs() - startedAt),
         methodUsed:
           result.methodUsed === "HEAD" || result.methodUsed === "GET" ? result.methodUsed : null,
-        probePath,
+        probePath: String(result.probePath || DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1),
       });
       const targetRecord = createTargetRecord(String(target || "").trim());
       if (!targetRecord) return buildResult({ reason: "invalid_target" });
-      const probeUrl = buildProbeUpstreamUrl(targetRecord, probePath);
-      if (!probeUrl) return buildResult({ reason: "invalid_target" });
-      const controller = new AbortController();
-      let timedOut = false;
-      const methodUsed = "GET";
-      const timeoutId = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, timeoutMs);
-      try {
-        const response = await fetchRequest(probeUrl.toString(), {
-          method: "GET",
-          headers: { "User-Agent": resolveProbeUserAgent(options?.userAgent) },
-          signal: controller.signal,
-        });
-        const statusCode = Number(response.status);
+      let forbidden = null;
+      let failure = null;
+      for (const probePath of [
+        DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1,
+        FALLBACK_NODE_LINE_HEAD_PROBE_PATH,
+      ]) {
+        const probeUrl = buildProbeUpstreamUrl(targetRecord, probePath);
+        if (!probeUrl) return buildResult({ reason: "invalid_target" });
+        const attemptStartedAt = nowMs();
+        const controller = new AbortController();
+        let timedOut = false;
+        const timeoutId = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, timeoutMs);
+        let attempt = null;
         try {
-          response.body?.cancel?.();
-        } catch {}
-        // 3xx 表示节点可达（HTTP→HTTPS、反代规范化等），不应判为失败。
-        const reachable = statusCode >= 200 && statusCode < 400;
-        return buildResult({
-          ok: reachable,
-          reason: reachable ? (statusCode < 300 ? "ok" : "redirect") : "http_error",
-          statusCode,
-          methodUsed,
-        });
-      } catch (error) {
-        const errorText = [error?.name, error?.message, error?.cause?.name, error?.cause?.message]
-          .map((value) => String(value || ""))
-          .join(" ");
-        const tlsError = /\b(?:tls|ssl|x509|certificate|handshake)\b/i.test(errorText);
-        return buildResult({
-          reason: timedOut ? "timeout" : tlsError ? "tls_error" : "network_error",
-          methodUsed,
-        });
-      } finally {
-        clearTimeout(timeoutId);
+          const response = await fetchRequest(probeUrl.toString(), {
+            method: methodUsed,
+            headers: buildProbeRequestHeaders(options?.userAgent),
+            signal: controller.signal,
+          });
+          const statusCode = Number(response.status);
+          try {
+            response.body?.cancel?.();
+          } catch {}
+          // 3xx 表示节点可达（HTTP→HTTPS、反代规范化等），不应判为失败。
+          const reachable = statusCode >= 200 && statusCode < 400;
+          attempt = {
+            ok: reachable,
+            reason: reachable ? (statusCode < 300 ? "ok" : "redirect") : "http_error",
+            statusCode,
+            methodUsed,
+          };
+        } catch (error) {
+          const errorText = [error?.name, error?.message, error?.cause?.name, error?.cause?.message]
+            .map((value) => String(value || ""))
+            .join(" ");
+          const tlsError = /\b(?:tls|ssl|x509|certificate|handshake)\b/i.test(errorText);
+          attempt = {
+            ok: false,
+            reason: timedOut ? "timeout" : tlsError ? "tls_error" : "network_error",
+            statusCode: null,
+            methodUsed,
+          };
+        } finally {
+          clearTimeout(timeoutId);
+        }
+        attempt.probePath = probePath;
+        attempt.elapsedMs = nowMs() - attemptStartedAt;
+        if (attempt.ok) return buildResult(attempt);
+        // 403 说明源站给出了真实响应、节点本身可达，先记下再试兜底路径。
+        if (attempt.statusCode === 403) {
+          if (!forbidden) forbidden = attempt;
+          continue;
+        }
+        failure = attempt;
+        // 超时或网络错误换路径也救不了，不必再打一次。
+        if (attempt.statusCode === null) break;
       }
+      if (forbidden) return buildResult({ ...forbidden, ok: true, reason: "ok" });
+      return buildResult(failure || { reason: "network_error" });
     },
     async getNode(nodeName, env, ctx) {
       nodeName = String(nodeName).toLowerCase();
@@ -27641,12 +27678,7 @@ function defineProxyFailoverStateMethods(dependencies = {}, kernel = {}) {
 function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
   return {
     buildFailoverProbeHeaders(userAgent = "") {
-      return new Headers({
-        Accept: "*/*",
-        "Cache-Control": "no-store",
-        "User-Agent": resolveProbeUserAgent(userAgent),
-        Pragma: "no-cache",
-      });
+      return new Headers(buildProbeRequestHeaders(userAgent));
     },
     async performFailoverProbeRequest(
       execution,
@@ -27763,7 +27795,8 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
         }
         const elapsedMs = Math.max(0, nowMs() - startedAt);
         const probeStatus = Number(response.status) || 0;
-        if (probeStatus >= 200 && probeStatus < 400) {
+        // 403 只是探测被源站安全策略拦下，节点仍可达，不作为故障转移的失败指标。
+        if ((probeStatus >= 200 && probeStatus < 400) || probeStatus === 403) {
           const status = response.status;
           try {
             response.body?.cancel?.();
