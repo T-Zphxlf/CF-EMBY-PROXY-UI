@@ -4133,12 +4133,7 @@ function dd(o = {}, e = {}) {
   }
   var l = /(?:\/\/[#@]\s*sourceMappingURL=[^\r\n]*|\/\*[#@]\s*sourceMappingURL=[^*]*\*\/)\s*$/;
   function d(f) {
-    let m = "";
-    try {
-      m = new TextDecoder().decode(f);
-    } catch {
-      return f;
-    }
+    const m = new TextDecoder().decode(f);
     if (!m.includes("sourceMappingURL")) return f;
     const p = m.replace(l, "");
     return p === m ? f : new TextEncoder().encode(p);
@@ -17285,14 +17280,6 @@ function jg(o = {}, e = {}) {
           };
         }
       }
-      return {
-        ok: !1,
-        status: 0,
-        targetRecord: r,
-        targetKey: c,
-        reason: "probe_no_candidate",
-        elapsedMs: Math.max(0, H() - d)
-      };
     },
     async runFailoverProbeTask(t, r, a = {}) {
       const n = t?.failoverContext;

@@ -5368,12 +5368,7 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
     /(?:\/\/[#@]\s*sourceMappingURL=[^\r\n]*|\/\*[#@]\s*sourceMappingURL=[^*]*\*\/)\s*$/;
   // 第三方 vendor 包自带 sourceMappingURL，但代理不提供 .map；剥掉可避免 DevTools 打开时每次请求 404。
   function stripAdminReleaseVendorSourceMapComment(bodyBytes) {
-    let text = "";
-    try {
-      text = new TextDecoder().decode(bodyBytes);
-    } catch {
-      return bodyBytes;
-    }
+    const text = new TextDecoder().decode(bodyBytes);
     if (!text.includes("sourceMappingURL")) return bodyBytes;
     const stripped = text.replace(ADMIN_RELEASE_VENDOR_SOURCE_MAP_COMMENT_PATTERN, "");
     if (stripped === text) return bodyBytes;
@@ -27945,14 +27940,6 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           };
         }
       }
-      return {
-        ok: false,
-        status: 0,
-        targetRecord,
-        targetKey,
-        reason: "probe_no_candidate",
-        elapsedMs: Math.max(0, nowMs() - startedAt),
-      };
     },
     async runFailoverProbeTask(execution, targetRecords, options = {}) {
       const failoverContext = execution?.failoverContext;
