@@ -1192,8 +1192,9 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     'invalid_target'
   ]);
 
-  function normalizeHeadProbePath() {
-    return GET_PROBE_PATH;
+  function normalizeHeadProbePath(value = '') {
+    // 兜底路径命中时 worker 会回传实际探测路径，卡片按实际显示。
+    return String(value || '').trim() || GET_PROBE_PATH;
   }
 
   async function runWithConcurrency(items = [], concurrency = 1, task = null) {
@@ -1225,11 +1226,12 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
       && Number.isFinite(legacyLatency)
       && legacyLatency >= 0
       && legacyLatency !== 9999;
-    const ok = source.ok === true || (!rawReason && hasLegacyLatency);
+    const statusCode = Number(source.statusCode);
+    // 403 是源站拦住探测而不是节点故障：按可达处理，卡片也不再显示 403。
+    const ok = source.ok === true || (!rawReason && hasLegacyLatency) || statusCode === 403;
     const reason = ok ? 'ok' : HEAD_PROBE_REASONS.has(rawReason) ? rawReason : 'network_error';
     const rawElapsedMs = Number(source.elapsedMs ?? (hasLegacyLatency ? legacyLatency : Number.NaN));
     const elapsedMs = Number.isFinite(rawElapsedMs) && rawElapsedMs >= 0 ? Math.round(rawElapsedMs) : null;
-    const statusCode = Number(source.statusCode);
     const methodUsed = String(source.methodUsed || '').trim().toUpperCase();
     return {
       ok,

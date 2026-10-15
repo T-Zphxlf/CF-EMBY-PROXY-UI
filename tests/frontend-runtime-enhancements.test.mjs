@@ -22,7 +22,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -530,7 +530,12 @@ test("global node GET probes use a bounded concurrent request pool", async () =>
 });
 
 test("GET probe results distinguish HTTP and transport failures from true timeout", () => {
-  const { normalizeHeadProbeResult, formatHeadProbeResult } = loadEnhancementTestHooks();
+  const {
+    normalizeHeadProbeResult,
+    formatHeadProbeResult,
+    formatHeadProbeTitle,
+    normalizeHeadProbePath,
+  } = loadEnhancementTestHooks();
   const slowSuccess = normalizeHeadProbeResult({
     probe: {
       ok: true,
@@ -548,8 +553,28 @@ test("GET probe results distinguish HTTP and transport failures from true timeou
     formatHeadProbeResult({
       probe: { ok: false, reason: "http_error", statusCode: 403, elapsedMs: 120 },
     }),
-    "HTTP 403 · 120 ms",
+    "120 ms",
   );
+  // 403 只说明源站拦住探测：按可达处理，卡片不显示 403，tooltip 也不能出现状态码。
+  const forbidden = normalizeHeadProbeResult({
+    probe: {
+      ok: false,
+      reason: "http_error",
+      statusCode: 403,
+      elapsedMs: 120,
+      methodUsed: "GET",
+      probePath: "/emby/system/info/public",
+    },
+  });
+  assert.equal(forbidden.ok, true);
+  assert.equal(forbidden.reason, "ok");
+  assert.equal(
+    formatHeadProbeTitle(forbidden),
+    "120 ms · 方法 GET · 路径 /emby/system/info/public",
+  );
+  // 兜底路径命中时 worker 回传 /emby/system/ping，卡片按实际路径显示。
+  assert.equal(normalizeHeadProbePath("/emby/system/ping"), "/emby/system/ping");
+  assert.equal(normalizeHeadProbePath(""), "/emby/system/info/public");
   assert.equal(
     formatHeadProbeResult({
       probe: { ok: false, reason: "tls_error", elapsedMs: 75 },
