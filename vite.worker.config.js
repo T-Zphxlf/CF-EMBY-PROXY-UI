@@ -19,7 +19,6 @@ export default defineConfig({
       fileName: () => "worker.js",
     },
     rolldownOptions: {
-      external: ["cloudflare:sockets"],
       output: {
         codeSplitting: false,
         entryFileNames: "worker.js",

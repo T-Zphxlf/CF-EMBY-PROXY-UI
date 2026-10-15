@@ -3,9 +3,6 @@ import { fileURLToPath } from "node:url";
 
 export const MAX_WORKER_BUNDLE_BYTES = 1_048_576;
 
-// Runtime builtins the Workers runtime resolves, so the bundle may import them.
-const ALLOWED_EXTERNAL_IMPORTS = new Set(["cloudflare:sockets"]);
-
 /**
  * Build the Worker and enforce its single-module delivery contract.
  *
@@ -30,13 +27,8 @@ export async function buildWorkerBundle({ outDir, write = true }) {
   if (chunks.length !== 1 || chunks[0].isEntry !== true) {
     throw new Error(`Worker build must emit exactly one entry chunk; received ${chunks.length}`);
   }
-  const externalImports = [...chunks[0].imports, ...chunks[0].dynamicImports].filter(
-    (specifier) => !ALLOWED_EXTERNAL_IMPORTS.has(specifier),
-  );
-  if (externalImports.length) {
-    throw new Error(
-      `Worker bundle must not contain external chunk imports: ${externalImports.join(", ")}`,
-    );
+  if (chunks[0].imports.length || chunks[0].dynamicImports.length) {
+    throw new Error("Worker bundle must not contain static or dynamic external chunk imports");
   }
   if (assets.length) {
     throw new Error(

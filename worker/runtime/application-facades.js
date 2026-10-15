@@ -6,7 +6,6 @@ import {
 } from "../core/http-body.js";
 import { createBindingStateManager } from "../core/binding-state.js";
 import { serializeBoundedJson } from "../core/bounded-json.js";
-import { probeTcpRtt as probeTcpHandshakeRtt } from "../core/tcp-rtt.js";
 import {
   hashPlaybackSessionFingerprint,
   hashStableStringParts,
@@ -21150,13 +21149,9 @@ function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
         ok: result.ok === true,
         reason: String(result.reason || "network_error"),
         statusCode: Number.isInteger(result.statusCode) ? result.statusCode : null,
-        elapsedMs: Number.isFinite(result.elapsedMs)
-          ? Math.max(0, Math.round(result.elapsedMs))
-          : Math.max(0, nowMs() - startedAt),
+        elapsedMs: Math.max(0, nowMs() - startedAt),
         methodUsed:
-          result.methodUsed === "HEAD" || result.methodUsed === "GET" || result.methodUsed === "TCP"
-            ? result.methodUsed
-            : null,
+          result.methodUsed === "HEAD" || result.methodUsed === "GET" ? result.methodUsed : null,
         probePath,
       });
       const targetRecord = createTargetRecord(String(target || "").trim());
@@ -21180,18 +21175,6 @@ function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
         try {
           response.body?.cancel?.();
         } catch {}
-        if (statusCode === 403) {
-          // WAF 拦截 HTTP 探测时退回无 UA 的 TCP 握手探测：只看到达与 RTT，不再暴露 403。
-          const tcpProbe = await probeTcpHandshakeRtt(targetRecord, timeoutMs);
-          if (tcpProbe?.ok)
-            return buildResult({
-              ok: true,
-              reason: "ok",
-              statusCode: null,
-              elapsedMs: tcpProbe.elapsedMs,
-              methodUsed: "TCP",
-            });
-        }
         // 3xx 表示节点可达（HTTP→HTTPS、反代规范化等），不应判为失败。
         const reachable = statusCode >= 200 && statusCode < 400;
         return buildResult({
@@ -27776,23 +27759,6 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
               options.parentSignal || null,
               PROBE_USER_AGENT,
             );
-          }
-        }
-        if (Number(response.status) === 403) {
-          // WAF 403 时退回无 UA 的 TCP 握手探测，只看到达与 RTT。
-          const tcpProbe = await probeTcpHandshakeRtt(targetRecord, probeTimeoutMs);
-          if (tcpProbe?.ok) {
-            try {
-              response.body?.cancel?.();
-            } catch {}
-            return {
-              ok: true,
-              status: 0,
-              targetRecord,
-              targetKey,
-              methodUsed: "TCP",
-              elapsedMs: tcpProbe.elapsedMs,
-            };
           }
         }
         const elapsedMs = Math.max(0, nowMs() - startedAt);

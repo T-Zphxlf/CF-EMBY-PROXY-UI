@@ -32,8 +32,6 @@ const facadeSignatures = new Map([
 ]);
 const requiredFacadeNames = new Set(facadeSignatures.keys());
 const nodeBuiltins = new Set(builtinModules.flatMap((name) => [name, `node:${name}`]));
-// Workers runtime builtins the bundle keeps as external imports.
-const allowedRuntimeSpecifiers = new Set(["cloudflare:sockets"]);
 const forbiddenIdentifiers = new Map([
   ["operations", "legacy generic operations bag"],
   ["dataService", "legacy dataService alias"],
@@ -489,7 +487,6 @@ function analyzeFiles(fileSources, { strictRepository = false } = {}) {
     for (const node of imports) {
       importEdges += 1;
       const specifier = String(node.source.value || "");
-      if (allowedRuntimeSpecifiers.has(specifier)) continue;
       if (
         nodeBuiltins.has(specifier) ||
         specifier.startsWith("node:") ||

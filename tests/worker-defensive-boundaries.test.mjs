@@ -517,37 +517,6 @@ test("node GET probes follow the provided inbound User-Agent", async () => {
   assert.deepEqual(requests, ["Inbound/9"]);
 });
 
-test("node GET probes fall back to a no-UA TCP RTT when the node answers 403", async () => {
-  let connectAddress = null;
-  await withWorkerGlobals(
-    {
-      fetch: async () => new Response(null, { status: 403 }),
-      __CF_EMBY_TEST_TCP_CONNECT__: (address) => {
-        connectAddress = address;
-        return { opened: Promise.resolve(), close() {} };
-      },
-    },
-    async () => {
-      const probe = await kernel.pingTarget("https://origin.example/emby", 1000);
-      assert.equal(probe.ok, true);
-      assert.equal(probe.reason, "ok");
-      assert.equal(probe.statusCode, null);
-      assert.equal(probe.methodUsed, "TCP");
-      assert.ok(probe.elapsedMs >= 0);
-    },
-  );
-  assert.deepEqual(connectAddress, { hostname: "origin.example", port: 443 });
-});
-
-test("node GET probes keep reporting 403 when the TCP fallback cannot connect", async () => {
-  await withWorkerGlobals({ fetch: async () => new Response(null, { status: 403 }) }, async () => {
-    const probe = await kernel.pingTarget("https://origin.example/emby", 1000);
-    assert.equal(probe.ok, false);
-    assert.equal(probe.reason, "http_error");
-    assert.equal(probe.statusCode, 403);
-  });
-});
-
 test("admin pingNode forwards the inbound User-Agent to the node probe", async () => {
   const { kv } = createInMemoryKvStore();
   const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: `ping-ua-${Date.now()}` };
@@ -732,39 +701,6 @@ test("failover probes skip the fallback retry when the remaining wait budget is 
       assert.equal(result.ok, false);
       assert.equal(result.status, 403);
       assert.equal(result.reason, "probe_status_403");
-    },
-  );
-  assert.deepEqual(attempts, ["Inbound/9"]);
-});
-
-test("failover probes fall back to a no-UA TCP RTT when the node answers 403", async () => {
-  const attempts = [];
-  await withWorkerGlobals(
-    {
-      fetch: async (url, init = {}) => {
-        attempts.push(new Headers(init.headers).get("User-Agent"));
-        return new Response(null, { status: 403 });
-      },
-      __CF_EMBY_TEST_TCP_CONNECT__: () => ({ opened: Promise.resolve(), close() {} }),
-    },
-    async () => {
-      const result = await proxyService.runFailoverProbeCandidate(
-        {
-          request: new Request("https://client.example/", {
-            headers: { "User-Agent": "Inbound/9" },
-          }),
-          failoverContext: {
-            probePath: "/emby/system/ping",
-            probeTimeoutMs: 1000,
-            waitTimeoutMs: 200,
-          },
-        },
-        createTargetRecord("https://origin.example/emby"),
-      );
-      assert.equal(result.ok, true);
-      assert.equal(result.methodUsed, "TCP");
-      assert.equal(result.status, 0);
-      assert.ok(result.elapsedMs >= 0);
     },
   );
   assert.deepEqual(attempts, ["Inbound/9"]);

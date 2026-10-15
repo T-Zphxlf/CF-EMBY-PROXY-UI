@@ -22,7 +22,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -530,8 +530,7 @@ test("global node GET probes use a bounded concurrent request pool", async () =>
 });
 
 test("GET probe results distinguish HTTP and transport failures from true timeout", () => {
-  const { normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle } =
-    loadEnhancementTestHooks();
+  const { normalizeHeadProbeResult, formatHeadProbeResult } = loadEnhancementTestHooks();
   const slowSuccess = normalizeHeadProbeResult({
     probe: {
       ok: true,
@@ -545,34 +544,11 @@ test("GET probe results distinguish HTTP and transport failures from true timeou
   assert.equal(slowSuccess.ok, true);
   assert.equal(slowSuccess.elapsedMs, 6500);
   assert.equal(formatHeadProbeResult(slowSuccess), "6500 ms");
-  const forbidden = normalizeHeadProbeResult({
-    probe: { ok: false, reason: "http_error", statusCode: 403, elapsedMs: 120 },
-  });
-  assert.equal(forbidden.ok, false);
-  assert.equal(forbidden.statusCode, 403);
-  assert.equal(formatHeadProbeResult(forbidden), "线路异常");
-  const tcpFallback = normalizeHeadProbeResult({
-    probe: {
-      ok: true,
-      reason: "ok",
-      statusCode: null,
-      elapsedMs: 42,
-      methodUsed: "TCP",
-      probePath: "/emby/system/info/public",
-    },
-  });
-  assert.equal(tcpFallback.ok, true);
-  assert.equal(tcpFallback.methodUsed, "TCP");
-  assert.equal(formatHeadProbeResult(tcpFallback), "42 ms");
-  assert.equal(
-    formatHeadProbeTitle(tcpFallback),
-    "42 ms · 方法 TCP · 路径 /emby/system/info/public",
-  );
   assert.equal(
     formatHeadProbeResult({
-      probe: { ok: false, reason: "http_error", statusCode: 404, elapsedMs: 130 },
+      probe: { ok: false, reason: "http_error", statusCode: 403, elapsedMs: 120 },
     }),
-    "HTTP 404 · 130 ms",
+    "HTTP 403 · 120 ms",
   );
   assert.equal(
     formatHeadProbeResult({

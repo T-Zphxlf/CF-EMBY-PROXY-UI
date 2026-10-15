@@ -42,8 +42,6 @@ const requiredChecks = [
     name: "Worker, KV safety, and current D1 schema",
     command: process.execPath,
     args: [
-      "--import",
-      "./tests/support/register-cloudflare-sockets.mjs",
       "--test",
       "tests/worker-defensive-boundaries.test.mjs",
       "tests/config-kv-safety.test.mjs",
