@@ -509,6 +509,29 @@ test("node probes preserve target base paths and require a successful response",
   assert.ok(requests.every((request) => (request.userAgent || "").startsWith("Hills/")));
 });
 
+test("node probes fall back to the Jellyfin root path when /emby is removed", async () => {
+  const requests = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        requests.push(String(url));
+        // Jellyfin 12 移除了 /emby/* 前缀，无前缀路径才返回成功。
+        return new Response(null, { status: String(url).includes("/emby/") ? 404 : 204 });
+      },
+    },
+    async () => {
+      const probe = await kernel.pingTarget("https://origin.example", 1000);
+      assert.equal(probe.ok, true);
+      assert.equal(probe.statusCode, 204);
+      assert.equal(probe.probePath, "/system/info/public");
+    },
+  );
+  assert.deepEqual(requests, [
+    "https://origin.example/emby/system/info/public",
+    "https://origin.example/system/info/public",
+  ]);
+});
+
 test("node and failover probes send a complete client header set", async () => {
   const captured = [];
   await withWorkerGlobals(
@@ -541,6 +564,35 @@ test("node and failover probes send a complete client header set", async () => {
       "user-agent": "Inbound/9",
     });
   }
+});
+
+test("failover probes fall back to the Jellyfin root path when /emby is removed", async () => {
+  const requests = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        requests.push(String(url));
+        return new Response(null, { status: String(url).includes("/emby/") ? 404 : 204 });
+      },
+    },
+    async () => {
+      const result = await proxyService.runFailoverProbeCandidate(
+        {
+          request: new Request("https://client.example/", {
+            headers: { "User-Agent": "Inbound/9" },
+          }),
+          failoverContext: { probePath: "/emby/system/ping", probeTimeoutMs: 1000 },
+        },
+        createTargetRecord("https://origin.example"),
+      );
+      assert.equal(result.ok, true);
+      assert.equal(result.status, 204);
+    },
+  );
+  assert.deepEqual(requests, [
+    "https://origin.example/emby/system/ping",
+    "https://origin.example/system/ping",
+  ]);
 });
 
 test("node GET probes follow the provided inbound User-Agent", async () => {
@@ -2842,6 +2894,53 @@ test("media auth normalization targets the documented Emby and Jellyfin schemes"
   assert.equal(passthrough.get("X-Emby-Token"), "token-passthrough");
 });
 
+test("media auth normalization synthesizes authorization from a query token", () => {
+  const autoQuery = new Headers();
+  proxyService.normalizeMediaAuthHeaders(autoQuery, "auto", "query-token");
+  assert.equal(autoQuery.get("Authorization"), 'MediaBrowser Token="query-token"');
+
+  const embyQuery = new Headers();
+  proxyService.normalizeMediaAuthHeaders(embyQuery, "emby", "query-token");
+  assert.equal(embyQuery.get("Authorization"), 'Emby Token="query-token"');
+
+  const passthroughQuery = new Headers();
+  proxyService.normalizeMediaAuthHeaders(passthroughQuery, "passthrough", "query-token");
+  assert.equal(passthroughQuery.has("Authorization"), false);
+
+  const headerWins = new Headers({ "X-Emby-Token": "header-token" });
+  proxyService.normalizeMediaAuthHeaders(headerWins, "auto", "query-token");
+  assert.equal(headerWins.get("Authorization"), 'MediaBrowser Token="header-token"');
+});
+
+test("media auth normalization merges a separate token into a device-only authorization header", () => {
+  const merged = new Headers({
+    "X-Emby-Authorization": 'MediaBrowser Client="c", Device="d", DeviceId="i", Version="1"',
+    "X-Emby-Token": "merged-token",
+  });
+  proxyService.normalizeMediaAuthHeaders(merged, "auto");
+  assert.equal(
+    merged.get("Authorization"),
+    'MediaBrowser Client="c", Device="d", DeviceId="i", Version="1", Token="merged-token"',
+  );
+  assert.equal(
+    merged.get("X-Emby-Authorization"),
+    'MediaBrowser Client="c", Device="d", DeviceId="i", Version="1", Token="merged-token"',
+  );
+
+  // Authorization 已带 Token 时不被覆盖。
+  const kept = new Headers({
+    Authorization: 'MediaBrowser Token="header-token", Client="c"',
+    "X-Emby-Token": "other-token",
+  });
+  proxyService.normalizeMediaAuthHeaders(kept, "auto");
+  assert.equal(kept.get("Authorization"), 'MediaBrowser Token="header-token", Client="c"');
+
+  // 查询参数里的 token 同样会被合并。
+  const queryMerged = new Headers({ Authorization: 'MediaBrowser Client="c"' });
+  proxyService.normalizeMediaAuthHeaders(queryMerged, "auto", "query-token");
+  assert.equal(queryMerged.get("Authorization"), 'MediaBrowser Client="c", Token="query-token"');
+});
+
 test("direct media redirects append the Jellyfin ApiKey query name only for Jellyfin nodes", () => {
   const policy = { auth: { token: "redirect-token", deviceId: "redirect-device" } };
   const jellyfinUrl = proxyService.appendMediaRedirectAuthToUrl(
@@ -2900,6 +2999,26 @@ test("proxy request state synthesizes Jellyfin authorization from token headers"
   );
   assert.equal(transport.newHeaders.has("X-MediaBrowser-Authorization"), false);
   assert.equal(transport.newHeaders.get("X-Emby-Token"), "transport-token");
+});
+
+test("proxy request state synthesizes authorization from a query token", async () => {
+  const request = new Request("https://worker.test/Videos/1/stream?api_key=query-secret");
+  const transport = await proxyService.buildProxyRequestState(
+    request,
+    { mediaAuthMode: "auto" },
+    "/Videos/1/stream",
+    new URL(request.url),
+    "203.0.113.1",
+    {},
+    false,
+    [],
+    {},
+  );
+  assert.equal(transport.newHeaders.get("Authorization"), 'MediaBrowser Token="query-secret"');
+  assert.equal(
+    transport.newHeaders.get("X-Emby-Authorization"),
+    'MediaBrowser Token="query-secret"',
+  );
 });
 
 test("TMDB provider id search converts to a title and year request", async () => {
@@ -6758,6 +6877,55 @@ test("local index source persists in KV and renders through the same-origin vend
       assert.match(await vendorResponse.text(), /localVendorLoaded/);
     },
   );
+});
+
+test("vendor assets strip the third-party sourceMappingURL comment", async () => {
+  const { kv } = createInMemoryKvStore({ "sys:theme": {} });
+  const env = { ADMIN_PATH: "/admin", ENI_KV: kv };
+  const html =
+    '<!doctype html><html><head><script src="https://cdn.example.test/lucide.min.js"></script><link rel="stylesheet" href="https://cdn.example.test/app.css"></head><body><div id="app"></div></body></html>';
+  const record = await buildAdminLocalIndexUploadRecord(html, "index.html");
+  const persisted = await kernel.persistAdminIndexUpload(record, { env, kv });
+  const entries = record.manifest.entries;
+  const jsEntry = entries.find((entry) => entry.upstreamUrl.endsWith(".js"));
+  const cssEntry = entries.find((entry) => entry.upstreamUrl.endsWith(".css"));
+  assert.ok(jsEntry && cssEntry);
+
+  const upstreamBodies = {
+    "https://cdn.example.test/lucide.min.js":
+      "window.lucide={};\n//# sourceMappingURL=lucide.min.js.map\n",
+    "https://cdn.example.test/app.css": "body{margin:0}\n/*# sourceMappingURL=app.css.map */\n",
+  };
+  const bodies = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        const body = upstreamBodies[String(url)];
+        assert.ok(body, `unexpected vendor fetch ${url}`);
+        return new Response(body, {
+          headers: {
+            "Content-Type": String(url).endsWith(".css") ? "text/css" : "application/javascript",
+          },
+        });
+      },
+    },
+    async () => {
+      for (const entry of [jsEntry, cssEntry]) {
+        const response = await renderAdminReleaseVendorAsset(
+          new Request(
+            `https://worker.test/admin/__release/${record.assetRevision}/vendor/${entry.assetKey}`,
+          ),
+          env,
+          null,
+          { releaseTag: record.assetRevision, assetKey: entry.assetKey },
+          persisted.config,
+        );
+        assert.equal(response.status, 200);
+        bodies.push(await response.text());
+      }
+    },
+  );
+  assert.deepEqual(bodies, ["window.lucide={};\n", "body{margin:0}\n"]);
 });
 
 test("local index upload replaces a corrupted record under the same revision", async () => {

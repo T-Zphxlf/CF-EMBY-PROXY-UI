@@ -5362,6 +5362,21 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
       headers,
     });
   }
+  var ADMIN_RELEASE_VENDOR_SOURCE_MAP_COMMENT_PATTERN =
+    /(?:\/\/[#@]\s*sourceMappingURL=[^\r\n]*|\/\*[#@]\s*sourceMappingURL=[^*]*\*\/)\s*$/;
+  // 第三方 vendor 包自带 sourceMappingURL，但代理不提供 .map；剥掉可避免 DevTools 打开时每次请求 404。
+  function stripAdminReleaseVendorSourceMapComment(bodyBytes) {
+    let text = "";
+    try {
+      text = new TextDecoder().decode(bodyBytes);
+    } catch {
+      return bodyBytes;
+    }
+    if (!text.includes("sourceMappingURL")) return bodyBytes;
+    const stripped = text.replace(ADMIN_RELEASE_VENDOR_SOURCE_MAP_COMMENT_PATTERN, "");
+    if (stripped === text) return bodyBytes;
+    return new TextEncoder().encode(stripped);
+  }
   async function renderAdminReleaseVendorAsset(request, env, ctx, routeMatch = null, config = {}) {
     const releaseTag = normalizeGithubReleaseRefValue(routeMatch?.releaseTag);
     const assetKey = String(routeMatch?.assetKey || "").trim();
@@ -5488,10 +5503,13 @@ function defineAdminShellDelivery(dependencies = {}, shell = {}) {
       shell.ADMIN_RELEASE_VENDOR_SOURCE_HASH_HEADER,
       hashStableText(manifestEntry.upstreamUrl),
     );
-    const storedResponse = new Response(vendorBody.bodyBytes, {
-      status: 200,
-      headers: storedHeaders,
-    });
+    const storedResponse = new Response(
+      stripAdminReleaseVendorSourceMapComment(vendorBody.bodyBytes),
+      {
+        status: 200,
+        headers: storedHeaders,
+      },
+    );
     if (!mutableVendorRef && edgeCache && typeof edgeCache.put === "function") {
       const cacheWriteTask = withNonCriticalFallback(
         edgeCache.put(cacheKey, storedResponse.clone()),
@@ -15991,6 +16009,33 @@ function buildProbeUpstreamUrl(targetBase, probePath = "/") {
   }
   return buildUpstreamProxyUrl(targetRecord, relativeProbePath);
 }
+var PROBE_ROOT_PREFIX_PATTERN = /^\/(?:emby|mediabrowser)(?=\/)/i;
+function expandProbePathRootVariants(probePath = "/") {
+  const normalized = sanitizeProxyPath(probePath);
+  if (!normalized || normalized === "/") return [normalized || "/"];
+  const stripped = normalized.replace(PROBE_ROOT_PREFIX_PATTERN, "");
+  if (stripped && stripped !== normalized) return [normalized, stripped];
+  return [normalized, `/emby${normalized}`];
+}
+/**
+ * 新版 Jellyfin 移除了 /emby 与 /mediabrowser 路由前缀，同一探测路径需要同时覆盖带前缀与不带前缀两种根。
+ * 按最终上游 URL 去重，避免对已经带前缀的节点重复探测同一条路径。
+ */
+function buildProbeUrlCandidates(targetRecord, probePaths = []) {
+  const seen = new Set();
+  const candidates = [];
+  for (const probePath of Array.isArray(probePaths) ? probePaths : [probePaths]) {
+    for (const variant of expandProbePathRootVariants(probePath)) {
+      const probeUrl = buildProbeUpstreamUrl(targetRecord, variant);
+      if (!probeUrl) continue;
+      const dedupeKey = probeUrl.toString();
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      candidates.push({ probePath: variant, probeUrl });
+    }
+  }
+  return candidates;
+}
 function buildFastSegmentUpstreamUrlText(targetRecord, proxyPath = "/", search = "") {
   if (!isTargetRecord(targetRecord)) {
     const legacyUrl = buildUpstreamProxyUrl(targetRecord, proxyPath);
@@ -20356,7 +20401,7 @@ function appendMediaRedirectAuthToUrl(targetUrl, headersOrPolicy, mediaAuthMode 
       : { auth: extractMediaRedirectAuth(headersOrPolicy) }
     ).auth || {};
   const effectiveMediaAuthMode = normalizeNodeMediaAuthMode(mediaAuthMode);
-  // Jellyfin 10.10+ only reads ApiKey once legacy authorization is disabled; Emby and legacy Jellyfin read api_key.
+  // Jellyfin 10.11+ only reads ApiKey once legacy authorization is disabled (default off since 12.0); Emby and legacy Jellyfin read api_key.
   // auto 无法确定上游版本，同时携带两种名字；上游忽略它不读的那个。
   const tokenQueryKeys =
     effectiveMediaAuthMode === "jellyfin"
@@ -20378,7 +20423,16 @@ function buildMediaAuthorizationFromToken(scheme, token = "") {
   if (!safeToken) return "";
   return `${scheme === "emby" ? "Emby" : "MediaBrowser"} Token="${safeToken}"`;
 }
-function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto") {
+var QUERY_MEDIA_AUTH_TOKEN_KEYS = ["api_key", "ApiKey", "X-Emby-Token", "X-MediaBrowser-Token"];
+function extractQueryMediaAuthToken(requestUrl) {
+  if (!(requestUrl instanceof URL)) return "";
+  for (const key of QUERY_MEDIA_AUTH_TOKEN_KEYS) {
+    const value = String(requestUrl.searchParams.get(key) || "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto", queryToken = "") {
   const mediaAuthMode = normalizeNodeMediaAuthMode(nodeMediaAuthMode);
   if (mediaAuthMode === "passthrough") return headers;
   const standardAuthorization = headers.get("Authorization")?.trim() || "";
@@ -20400,24 +20454,32 @@ function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto") {
       : legacyEmbyScheme
         ? legacyEmbyAuthorization
         : "";
+  const availableToken =
+    getLooseHeaderValue(headers, "X-Emby-Token").trim() ||
+    getLooseHeaderValue(headers, "X-MediaBrowser-Token").trim() ||
+    getLooseHeaderValue(headers, "X-Emby-Auth-Token").trim() ||
+    getLooseHeaderValue(headers, "X-MediaBrowser-Auth-Token").trim();
   if (!canonicalAuthorization) {
-    const token =
-      getLooseHeaderValue(headers, "X-Emby-Token").trim() ||
-      getLooseHeaderValue(headers, "X-MediaBrowser-Token").trim() ||
-      getLooseHeaderValue(headers, "X-Emby-Auth-Token").trim() ||
-      getLooseHeaderValue(headers, "X-MediaBrowser-Auth-Token").trim();
     const bearerMatch = /^Bearer\s+(.+)$/i.exec(standardAuthorization);
     canonicalAuthorization = buildMediaAuthorizationFromToken(
       synthesisScheme,
-      token || (bearerMatch ? bearerMatch[1] : ""),
+      availableToken || (bearerMatch ? bearerMatch[1] : "") || String(queryToken || "").trim(),
     );
+  } else if (!parseMediaAuthorizationAttributes(canonicalAuthorization).token) {
+    // 旧版客户端把 token 放在 X-Emby-Token / X-MediaBrowser-Token / 查询参数，Authorization 只带设备信息；
+    // Jellyfin 12 只认 Authorization 里的 Token 属性，这里把 token 合并进去完成迁移。
+    const missingToken = availableToken || String(queryToken || "").trim();
+    if (missingToken) {
+      const safeToken = missingToken.replace(/["\\]/g, "");
+      canonicalAuthorization = `${canonicalAuthorization.replace(/,\s*$/, "")}, Token="${safeToken}"`;
+    }
   }
   if (!canonicalAuthorization) return headers;
   const targetScheme =
     fixedScheme || standardScheme || mediaBrowserScheme || legacyEmbyScheme || "";
   canonicalAuthorization = rewriteMediaAuthorizationScheme(canonicalAuthorization, targetScheme);
   headers.set("Authorization", canonicalAuthorization);
-  // X-Emby-Authorization is the legacy alias accepted by both Emby and Jellyfin; X-MediaBrowser-Authorization is read by neither.
+  // X-Emby-Authorization 是 Emby 与 Jellyfin ≤11 的旧别名（Jellyfin 12 仅在 legacy 开启且无 Authorization 时兜底读取）；X-MediaBrowser-Authorization 上游不读取。
   headers.set("X-Emby-Authorization", canonicalAuthorization);
   headers.delete("X-MediaBrowser-Authorization");
   return headers;
@@ -21172,12 +21234,12 @@ function defineNodeRepositoryMethods(dependencies = {}, kernel = {}) {
       if (!targetRecord) return buildResult({ reason: "invalid_target" });
       let forbidden = null;
       let failure = null;
-      for (const probePath of [
+      const probeCandidates = buildProbeUrlCandidates(targetRecord, [
         DEFAULT_NODE_LINE_HEAD_PROBE_PATH$1,
         FALLBACK_NODE_LINE_HEAD_PROBE_PATH,
-      ]) {
-        const probeUrl = buildProbeUpstreamUrl(targetRecord, probePath);
-        if (!probeUrl) return buildResult({ reason: "invalid_target" });
+      ]);
+      if (!probeCandidates.length) return buildResult({ reason: "invalid_target" });
+      for (const { probePath, probeUrl } of probeCandidates) {
         const attemptStartedAt = nowMs();
         const controller = new AbortController();
         let timedOut = false;
@@ -27734,8 +27796,8 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
         Number(failoverContext?.probeTimeoutMs) || DEFAULT_HEDGE_PROBE_TIMEOUT_MS,
       );
       const targetKey = buildTargetRecordKey(targetRecord);
-      const probeUrl = buildProbeUpstreamUrl(targetRecord, probePath);
-      if (!probeUrl)
+      const probeCandidates = buildProbeUrlCandidates(targetRecord, [probePath]);
+      if (!probeCandidates.length)
         return {
           ok: false,
           status: 0,
@@ -27745,120 +27807,138 @@ function defineProxyFailoverProbeMethods(dependencies = {}, kernel = {}) {
           elapsedMs: 0,
         };
       const startedAt = nowMs();
-      let response = null;
       const preferGet = failoverContext?.probePreferGet !== false;
-      let methodUsed = preferGet ? "GET" : "HEAD";
-      try {
-        response = await kernel.performFailoverProbeRequest(
-          execution,
-          probeUrl,
-          methodUsed,
-          probeTimeoutMs,
-          options.parentSignal || null,
-        );
-        if (!preferGet && (response.status === 405 || response.status === 501)) {
-          try {
-            response.body?.cancel?.();
-          } catch {}
-          methodUsed = "GET";
+      for (let probeIndex = 0; probeIndex < probeCandidates.length; probeIndex += 1) {
+        const probeUrl = probeCandidates[probeIndex].probeUrl;
+        const hasNextProbeUrl = probeIndex < probeCandidates.length - 1;
+        let response = null;
+        let methodUsed = preferGet ? "GET" : "HEAD";
+        try {
           response = await kernel.performFailoverProbeRequest(
             execution,
             probeUrl,
-            "GET",
+            methodUsed,
             probeTimeoutMs,
             options.parentSignal || null,
           );
-        }
-        const inboundUserAgent = String(
-          execution?.request?.headers?.get("User-Agent") || "",
-        ).trim();
-        if (response.status === 403 && inboundUserAgent && inboundUserAgent !== PROBE_USER_AGENT) {
-          // The retry shares the foreground wait budget; clamp to it and skip when nothing is left.
-          const waitBudgetMs = Number(failoverContext?.waitTimeoutMs) || 0;
-          const retryTimeoutMs =
-            waitBudgetMs > 0
-              ? Math.min(probeTimeoutMs, waitBudgetMs - (nowMs() - startedAt))
-              : probeTimeoutMs;
-          if (retryTimeoutMs >= 250) {
+          if (!preferGet && (response.status === 405 || response.status === 501)) {
             try {
               response.body?.cancel?.();
             } catch {}
+            methodUsed = "GET";
             response = await kernel.performFailoverProbeRequest(
               execution,
               probeUrl,
-              methodUsed,
-              retryTimeoutMs,
+              "GET",
+              probeTimeoutMs,
               options.parentSignal || null,
-              PROBE_USER_AGENT,
             );
           }
-        }
-        const elapsedMs = Math.max(0, nowMs() - startedAt);
-        const probeStatus = Number(response.status) || 0;
-        // 403 只是探测被源站安全策略拦下，节点仍可达，不作为故障转移的失败指标。
-        if ((probeStatus >= 200 && probeStatus < 400) || probeStatus === 403) {
-          const status = response.status;
+          const inboundUserAgent = String(
+            execution?.request?.headers?.get("User-Agent") || "",
+          ).trim();
+          if (
+            response.status === 403 &&
+            inboundUserAgent &&
+            inboundUserAgent !== PROBE_USER_AGENT
+          ) {
+            // The retry shares the foreground wait budget; clamp to it and skip when nothing is left.
+            const waitBudgetMs = Number(failoverContext?.waitTimeoutMs) || 0;
+            const retryTimeoutMs =
+              waitBudgetMs > 0
+                ? Math.min(probeTimeoutMs, waitBudgetMs - (nowMs() - startedAt))
+                : probeTimeoutMs;
+            if (retryTimeoutMs >= 250) {
+              try {
+                response.body?.cancel?.();
+              } catch {}
+              response = await kernel.performFailoverProbeRequest(
+                execution,
+                probeUrl,
+                methodUsed,
+                retryTimeoutMs,
+                options.parentSignal || null,
+                PROBE_USER_AGENT,
+              );
+            }
+          }
+          const elapsedMs = Math.max(0, nowMs() - startedAt);
+          const probeStatus = Number(response.status) || 0;
+          // 403 只是探测被源站安全策略拦下，节点仍可达，不作为故障转移的失败指标。
+          if ((probeStatus >= 200 && probeStatus < 400) || probeStatus === 403) {
+            const status = response.status;
+            try {
+              response.body?.cancel?.();
+            } catch {}
+            return {
+              ok: true,
+              status,
+              targetRecord,
+              targetKey,
+              methodUsed,
+              elapsedMs,
+            };
+          }
           try {
             response.body?.cancel?.();
           } catch {}
+          // 新版 Jellyfin 移除了 /emby 根前缀：该路径缺失时换下一个根变体继续探测。
+          if (hasNextProbeUrl && (probeStatus === 404 || probeStatus === 405)) continue;
           return {
-            ok: true,
-            status,
+            ok: false,
+            status: response.status,
             targetRecord,
             targetKey,
-            methodUsed,
+            reason: `probe_status_${Number(response.status) || 0}`,
             elapsedMs,
+          };
+        } catch (error) {
+          const elapsedMs = Math.max(0, nowMs() - startedAt);
+          const errorCode = String(error?.code || "")
+            .trim()
+            .toUpperCase();
+          const requestAbortReason = String(
+            execution?.requestLifecycle?.getAbortReason?.() || "",
+          ).trim();
+          if (requestAbortReason)
+            return {
+              ok: false,
+              targetRecord,
+              targetKey,
+              reason: requestAbortReason.toLowerCase(),
+              elapsedMs,
+              aborted: true,
+            };
+          if (
+            String(options.parentSignal?.reason || "").trim() === "probe_winner" &&
+            isAbortLikeError(error)
+          )
+            return {
+              ok: false,
+              targetRecord,
+              targetKey,
+              reason: "probe_winner_aborted",
+              elapsedMs,
+              aborted: true,
+            };
+          return {
+            ok: false,
+            targetRecord,
+            targetKey,
+            reason: errorCode === "UPSTREAM_TIMEOUT" ? "probe_timeout" : "probe_network_error",
+            elapsedMs,
+            aborted: isAbortLikeError(error),
           };
         }
-        try {
-          response.body?.cancel?.();
-        } catch {}
-        return {
-          ok: false,
-          status: response.status,
-          targetRecord,
-          targetKey,
-          reason: `probe_status_${Number(response.status) || 0}`,
-          elapsedMs,
-        };
-      } catch (error) {
-        const elapsedMs = Math.max(0, nowMs() - startedAt);
-        const errorCode = String(error?.code || "")
-          .trim()
-          .toUpperCase();
-        const requestAbortReason = String(
-          execution?.requestLifecycle?.getAbortReason?.() || "",
-        ).trim();
-        if (requestAbortReason)
-          return {
-            ok: false,
-            targetRecord,
-            targetKey,
-            reason: requestAbortReason.toLowerCase(),
-            elapsedMs,
-            aborted: true,
-          };
-        if (
-          String(options.parentSignal?.reason || "").trim() === "probe_winner" &&
-          isAbortLikeError(error)
-        )
-          return {
-            ok: false,
-            targetRecord,
-            targetKey,
-            reason: "probe_winner_aborted",
-            elapsedMs,
-            aborted: true,
-          };
-        return {
-          ok: false,
-          targetRecord,
-          targetKey,
-          reason: errorCode === "UPSTREAM_TIMEOUT" ? "probe_timeout" : "probe_network_error",
-          elapsedMs,
-          aborted: isAbortLikeError(error),
-        };
       }
+      return {
+        ok: false,
+        status: 0,
+        targetRecord,
+        targetKey,
+        reason: "probe_no_candidate",
+        elapsedMs: Math.max(0, nowMs() - startedAt),
+      };
     },
     async runFailoverProbeTask(execution, targetRecords, options = {}) {
       const failoverContext = execution?.failoverContext;
@@ -28230,7 +28310,11 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
             ...INTERNAL_PROXY_COOKIE_NAMES,
           ])
         : null;
-      normalizeMediaAuthHeaders(newHeaders, options.effectiveMediaAuthMode || node.mediaAuthMode);
+      normalizeMediaAuthHeaders(
+        newHeaders,
+        options.effectiveMediaAuthMode || node.mediaAuthMode,
+        extractQueryMediaAuthToken(requestUrl),
+      );
       const realClientIpHeaderMode = getRealClientIpHeaderMode(
         options.effectiveRealClientIpMode || node.realClientIpMode,
       );

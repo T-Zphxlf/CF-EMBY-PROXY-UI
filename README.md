@@ -732,18 +732,18 @@ https://你的域名/hk/123
 项目对 Emby / Jellyfin 媒体服务认证头做了兼容处理：
 
 - 识别 `Authorization: Emby ...` 与 `Authorization: MediaBrowser ...`
-- 兼容 `X-Emby-Authorization`（Emby / Jellyfin 都读取）；`X-MediaBrowser-Authorization` 上游不读取，非 `passthrough` 模式下会被删除
+- 兼容 `X-Emby-Authorization`（Emby 与 Jellyfin ≤11 读取；Jellyfin 12 默认不再读取）；`X-MediaBrowser-Authorization` 上游不读取，非 `passthrough` 模式下会被删除
 - 节点级支持 `auto / emby / jellyfin / passthrough` 显式模式，便于兼容特殊上游
 - 在特定 403 / 协议异常场景下做一次安全回退重试（仅媒体 GET 类请求）
 
 节点编辑面板中的“媒体认证头模式”建议按下面理解：
 
-- `auto`（默认推荐）：识别请求里已有的认证头家族；没有可识别 scheme 时，从 `X-Emby-Token` / `X-MediaBrowser-Token` / `Bearer` 合成 `Authorization: MediaBrowser Token=...`（Emby 与 Jellyfin 都接受该 scheme），原 token 载体保留
+- `auto`（默认推荐）：识别请求里已有的认证头家族；没有可识别 scheme 时，依次从 `X-Emby-Token` / `X-MediaBrowser-Token` / `Bearer` / 查询参数 `api_key`（或 `ApiKey`）提取 token，合成 `Authorization: MediaBrowser Token=...`（Emby 与 Jellyfin 都接受该 scheme），原 token 载体保留
 - `emby`：强制改写为 `Emby` 家族，直连重定向查询参数用 `api_key`
 - `jellyfin`：强制改写为 `MediaBrowser` 家族，直连重定向查询参数用 `ApiKey`
 - `passthrough`：完全透传（保留原始认证头），不改写 `Authorization` / `X-Emby-Authorization` / `X-MediaBrowser-Authorization`，适合你已确认上游需要保留原始头部的场景
 
-> **Jellyfin 12 注意**：`EnableLegacyAuthorization` 默认关闭后，`X-Emby-Token`、`X-MediaBrowser-Token`、`X-Emby-Authorization`、`Emby` scheme 和 `api_key` 查询参数都会被上游忽略，只剩 `Authorization: MediaBrowser Token=...` 与 `ApiKey` 查询参数。`auto` 模式已自动补 `MediaBrowser` scheme；但若客户端只把 token 放在 `api_key` 查询里、没有任何认证头，Worker 无从提取 token，此时需把节点显式设为 `jellyfin`。
+> **Jellyfin 12 注意**：`EnableLegacyAuthorization` 默认关闭后，`X-Emby-Token`、`X-MediaBrowser-Token`、`X-Emby-Authorization`、`Emby` scheme 和 `api_key` 查询参数都会被上游忽略，只剩 `Authorization: MediaBrowser Token=...` 与 `ApiKey` 查询参数。`auto` 模式已自动补 `MediaBrowser` scheme；若客户端只把 token 放在 `api_key` / `ApiKey` 查询里、没有任何认证头，非 `passthrough` 模式的 Worker 会从查询参数提取 token 并补出 `Authorization` 头；若客户端发送的 `Authorization` / `X-Emby-Authorization` 只带设备信息、token 放在 `X-Emby-Token` 等头里，Worker 也会把 token 合并进 `Authorization`，这两种迁移场景都无需额外配置；`passthrough` 模式完全透传、不做改写。
 >
 > **直连回退**：只要客户端 Cookie 名称命中 `emby / jellyfin / mediabrowser / session / auth / token / credential / signature / secret` 等关键字，就判定为 Cookie 鉴权并回退到 Worker 代理，避免媒体鉴权丢失；代价是这部分流量不走直连。跨域重定向一律剥离客户端 `Authorization` 与 Cookie，只保留管理员显式配置的请求头。
 
