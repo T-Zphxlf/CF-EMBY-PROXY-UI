@@ -9,6 +9,7 @@ import {
   ADMIN_RUNTIME_ENHANCEMENT_STYLE,
 } from "./admin-runtime-enhancements.mjs";
 import { inspectRuntimeAssets } from "./check-cdn-paths.mjs";
+import { APP_VERSION } from "../../worker/core/build-info.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -20,6 +21,7 @@ const targetMetaPath = path.resolve(repoRoot, "frontend/.admin-runtime-sync.json
 const ADMIN_BOOTSTRAP_PLACEHOLDER = "__ADMIN_BOOTSTRAP_JSON__";
 const ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER = "__INIT_HEALTH_BANNER__";
 const ADMIN_APP_ROOT_PLACEHOLDER = "__ADMIN_APP_ROOT__";
+const ADMIN_APP_VERSION_PLACEHOLDER = "__APP_VERSION__";
 const ADMIN_APP_ROOT_HTML = '<div id="app" v-cloak></div>';
 
 const PRIMARY_VIEWS = Object.freeze(["dashboard", "nodes", "logs", "dns", "settings"]);
@@ -77,6 +79,7 @@ function validateSourceTemplate(templateHtml = "") {
     ADMIN_BOOTSTRAP_PLACEHOLDER,
     ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER,
     ADMIN_APP_ROOT_PLACEHOLDER,
+    ADMIN_APP_VERSION_PLACEHOLDER,
   ].filter((token) => !source.includes(token));
 
   if (missing.length) {
@@ -103,12 +106,14 @@ function materializeFrontendIndex(templateHtml = "") {
   const output = String(templateHtml || "")
     .replace(ADMIN_BOOTSTRAP_PLACEHOLDER, serializeInlineJson(buildFallbackBootstrap()))
     .replace(ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER, "")
-    .replace(ADMIN_APP_ROOT_PLACEHOLDER, ADMIN_APP_ROOT_HTML);
+    .replace(ADMIN_APP_ROOT_PLACEHOLDER, ADMIN_APP_ROOT_HTML)
+    .replaceAll(ADMIN_APP_VERSION_PLACEHOLDER, `V${APP_VERSION}`);
 
   const unresolvedTokens = [
     ADMIN_BOOTSTRAP_PLACEHOLDER,
     ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER,
     ADMIN_APP_ROOT_PLACEHOLDER,
+    ADMIN_APP_VERSION_PLACEHOLDER,
   ].filter((token) => output.includes(token));
 
   if (unresolvedTokens.length) {

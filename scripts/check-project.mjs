@@ -39,6 +39,12 @@ const requiredChecks = [
     cwd: repositoryRoot,
   },
   {
+    name: "Version consistency",
+    command: process.execPath,
+    args: ["./scripts/check-version-consistency.mjs"],
+    cwd: repositoryRoot,
+  },
+  {
     name: "Worker, KV safety, and current D1 schema",
     command: process.execPath,
     args: [

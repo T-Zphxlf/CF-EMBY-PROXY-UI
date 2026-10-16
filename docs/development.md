@@ -87,6 +87,10 @@ node --test tests/*.test.mjs
 5. 查看 `git diff --stat`、`git diff --check`，确认生成物变更来自本次源码改动，没有密钥或大块无关格式化。
 6. 使用 `wrangler.toml` 对应的 Cloudflare 环境部署；生产 binding、`HOST`、`ADMIN_PATH`、认证密钥和 D1/KV ID 不写入仓库。
 
+### 版本号
+
+应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生，生成物随构建自动更新。发布时改这一处并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
+
 ## 6. 环境变量和本地运行
 
 - 根目录 `.dev.vars.example` 是 Worker 本地变量模板，实际 `.dev.vars` 被忽略。
