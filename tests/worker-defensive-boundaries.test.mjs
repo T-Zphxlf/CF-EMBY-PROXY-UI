@@ -3586,6 +3586,44 @@ test("blocked cross-origin image redirects fall back to a client-visible redirec
   assert.equal(fetched[1], "https://cdn.other.test/images/cover.jpg");
 });
 
+test("redirectable query auth is appended to a client-visible image redirect", async () => {
+  const fetched = [];
+  await withWorkerGlobals(
+    {
+      fetch: async (url) => {
+        fetched.push(String(url));
+        if (fetched.length === 1)
+          return new Response(null, {
+            status: 302,
+            headers: { Location: "https://cdn.other.test/images/cover.jpg" },
+          });
+        return new Response("blocked", { status: 403 });
+      },
+    },
+    async () => {
+      const request = new Request(
+        "https://worker.test/node/secret/Items/1/Images/Primary?api_key=query-token",
+      );
+      const response = await proxyService.handle(
+        request,
+        { target: "https://origin.test" },
+        "/Items/1/Images/Primary",
+        "node",
+        "secret",
+        {},
+        { waitUntil() {} },
+        { requestUrl: new URL(request.url), runtimeConfig: { rateLimitRpm: 0 } },
+      );
+      assert.equal(response.status, 302);
+      const location = new URL(String(response.headers.get("Location")));
+      assert.equal(location.origin, "https://cdn.other.test");
+      assert.equal(location.pathname, "/images/cover.jpg");
+      assert.equal(location.searchParams.get("ApiKey"), "query-token");
+      assert.equal(location.searchParams.get("api_key"), "query-token");
+    },
+  );
+});
+
 test("upstream 403 reaches the client instead of a speculative fallback status", async () => {
   const apiCalls = [];
   await withWorkerGlobals(
@@ -8767,13 +8805,156 @@ test("auto media auth mode carries both token query names", () => {
   assert.equal(autoUrl.searchParams.get("api_key"), "auto-token");
   assert.equal(autoUrl.searchParams.get("ApiKey"), "auto-token");
 
-  const presetUrl = proxyService.appendMediaRedirectAuthToUrl(
+  // 已存在的名字保留其值，缺失的名字必须补上：Jellyfin 12 只认 ApiKey，Emby 只认 api_key。
+  const presetApiKeyUrl = proxyService.appendMediaRedirectAuthToUrl(
     new URL("https://node.test/Videos/1/stream?ApiKey=preset"),
     policy,
     "auto",
   );
-  assert.equal(presetUrl.searchParams.get("ApiKey"), "preset");
-  assert.equal(presetUrl.searchParams.get("api_key"), null);
+  assert.equal(presetApiKeyUrl.searchParams.get("ApiKey"), "preset");
+  assert.equal(presetApiKeyUrl.searchParams.get("api_key"), "auto-token");
+
+  const presetApiKeyLowerUrl = proxyService.appendMediaRedirectAuthToUrl(
+    new URL("https://node.test/Videos/1/stream?api_key=preset"),
+    policy,
+    "auto",
+  );
+  assert.equal(presetApiKeyLowerUrl.searchParams.get("api_key"), "preset");
+  assert.equal(presetApiKeyLowerUrl.searchParams.get("ApiKey"), "auto-token");
+});
+
+test("auto media auth mode rewrites the Emby scheme for Jellyfin 12", () => {
+  const auto = proxyService.normalizeMediaAuthHeaders(
+    new Headers({ Authorization: 'Emby Client="c", Token="t"' }),
+    "auto",
+    "",
+  );
+  assert.equal(auto.get("Authorization"), 'MediaBrowser Client="c", Token="t"');
+
+  const explicitEmby = proxyService.normalizeMediaAuthHeaders(
+    new Headers({ Authorization: 'Emby Client="c", Token="t"' }),
+    "emby",
+    "",
+  );
+  assert.equal(explicitEmby.get("Authorization"), 'Emby Client="c", Token="t"');
+
+  const mediaBrowser = proxyService.normalizeMediaAuthHeaders(
+    new Headers({ Authorization: 'MediaBrowser Client="c", Token="t"' }),
+    "auto",
+    "",
+  );
+  assert.equal(mediaBrowser.get("Authorization"), 'MediaBrowser Client="c", Token="t"');
+});
+
+test("legacy /emby target base maps unprefixed upstream redirects back to the proxy", () => {
+  const headers = new Headers({ Location: "/Videos/1/stream" });
+  const response = new Response(null, {
+    status: 302,
+    headers: { Location: "/Videos/1/stream" },
+  });
+  proxyService.applyProxyRedirectHeaders(
+    headers,
+    response,
+    new URL("https://origin.example/emby"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/emby/Videos/1/stream"),
+    {},
+  );
+  assert.equal(headers.get("Location"), "/node/secret/Videos/1/stream");
+});
+
+test("304 responses and non-http Location values are not forwarded as redirects", () => {
+  const notModified = new Headers({ Location: "/Videos/1/stream" });
+  proxyService.applyProxyRedirectHeaders(
+    notModified,
+    new Response(null, { status: 304, headers: { Location: "/Videos/1/stream" } }),
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/Videos/1/stream"),
+    {},
+  );
+  assert.equal(notModified.get("Location"), "/Videos/1/stream");
+
+  const unsafe = new Headers({ Location: "javascript:alert(1)" });
+  proxyService.applyProxyRedirectHeaders(
+    unsafe,
+    new Response(null, { status: 302, headers: { Location: "javascript:alert(1)" } }),
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/"),
+    {},
+  );
+  assert.equal(unsafe.get("Location"), null);
+});
+
+test("external media redirects carry query auth only when direct transport is allowed", () => {
+  const response = new Response(null, {
+    status: 302,
+    headers: { Location: "https://cdn.other.test/Videos/1/stream" },
+  });
+  const externalRedirectAuth = {
+    policy: { auth: { token: "tok", deviceId: "" } },
+    mode: "jellyfin",
+    canDirect: true,
+  };
+
+  const passthrough = new Headers({ Location: "https://cdn.other.test/Videos/1/stream" });
+  proxyService.applyProxyRedirectHeaders(
+    passthrough,
+    response,
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/Videos/1/stream"),
+    { externalRedirectAuth },
+  );
+  assert.match(String(passthrough.get("Location")), /[?&]ApiKey=tok/);
+
+  const direct = new Headers({ Location: "https://cdn.other.test/Videos/1/stream" });
+  proxyService.applyProxyRedirectHeaders(
+    direct,
+    response,
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    new URL("https://cdn.other.test/Videos/1/stream"),
+    new URL("https://cdn.other.test/Videos/1/stream"),
+    { externalRedirectAuth },
+  );
+  assert.match(String(direct.get("Location")), /[?&]ApiKey=tok/);
+
+  const sameOrigin = new Headers({ Location: "https://worker.test/node/secret/Videos/1/stream" });
+  proxyService.applyProxyRedirectHeaders(
+    sameOrigin,
+    response,
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    new URL("https://worker.test/node/secret/Videos/1/stream"),
+    new URL("https://origin.example/Videos/1/stream"),
+    { externalRedirectAuth, workerOrigin: "https://worker.test" },
+  );
+  assert.equal(sameOrigin.get("Location"), "https://worker.test/node/secret/Videos/1/stream");
+
+  const noAuth = new Headers({ Location: "https://cdn.other.test/Videos/1/stream" });
+  proxyService.applyProxyRedirectHeaders(
+    noAuth,
+    response,
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/Videos/1/stream"),
+    {},
+  );
+  assert.equal(noAuth.get("Location"), "https://cdn.other.test/Videos/1/stream");
 });
 
 test("direct media auth policy ignores unrelated cookies but keeps auth cookies", async () => {
@@ -8811,4 +8992,70 @@ test("direct media auth policy ignores unrelated cookies but keeps auth cookies"
 
   const newsletterCookie = await buildPolicy({ Cookie: "newsletter=true" });
   assert.equal(newsletterCookie.canDirect, true);
+});
+
+test("playback info rewriting keeps strict base matching without the legacy root fallback", () => {
+  const execution = {
+    nodeName: "node",
+    nodeKey: "secret",
+    proxyPath: "/Videos/1/stream",
+    requestUrl: new URL("https://worker.test/node/secret/Videos/1/stream"),
+    playbackInfoRewriteUrlMode: "",
+  };
+  const activeTargetBase = new URL("https://origin.example/emby");
+  // target 带旧 /emby 根时只有重定向映射会回退；PlaybackInfo 改写必须严格按 base 匹配。
+  assert.match(
+    proxyService.buildPlaybackInfoProxyUrl(
+      execution,
+      "https://origin.example/Videos/1/stream",
+      activeTargetBase,
+      activeTargetBase,
+    ),
+    /^\/__playback-relay\//,
+  );
+  assert.equal(
+    proxyService.buildPlaybackInfoProxyUrl(
+      execution,
+      "https://origin.example/emby/Videos/1/stream",
+      activeTargetBase,
+      activeTargetBase,
+    ),
+    "/Videos/1/stream",
+  );
+});
+
+test("cross-origin redirect without redirectable auth fails closed instead of leaking the node location", async () => {
+  const handle = async (headers) =>
+    withWorkerGlobals(
+      {
+        fetch: async () =>
+          new Response(null, {
+            status: 302,
+            headers: { Location: "https://cdn.other.test/Videos/1/stream" },
+          }),
+      },
+      async () => {
+        const request = new Request("https://worker.test/node/secret/Videos/1/stream", { headers });
+        return proxyService.handle(
+          request,
+          { target: "https://origin.test", mainVideoStreamMode: "proxy" },
+          "/Videos/1/stream",
+          "node",
+          "secret",
+          {},
+          { waitUntil() {} },
+          { requestUrl: new URL(request.url), runtimeConfig: { rateLimitRpm: 0 } },
+        );
+      },
+    );
+
+  // 私密 Cookie 鉴权无法随浏览器跳转携带，跳数用尽时必须 409，不能把节点地址透传给客户端。
+  const blocked = await handle({ Cookie: "emby_session=abc" });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.headers.get("Location"), null);
+
+  // 鉴权可随查询参数携带时才允许把带 token 的跨域跳转交给客户端。
+  const allowed = await handle({ "X-Emby-Token": "tok" });
+  assert.equal(allowed.status, 302);
+  assert.match(String(allowed.headers.get("Location")), /[?&]ApiKey=tok/);
 });

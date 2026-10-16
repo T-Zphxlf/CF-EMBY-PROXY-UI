@@ -738,7 +738,7 @@ https://你的域名/hk/123
 
 节点编辑面板中的“媒体认证头模式”建议按下面理解：
 
-- `auto`（默认推荐）：识别请求里已有的认证头家族；没有可识别 scheme 时，依次从 `X-Emby-Token` / `X-MediaBrowser-Token` / `Bearer` / 查询参数 `api_key`（或 `ApiKey`）提取 token，合成 `Authorization: MediaBrowser Token=...`（Emby 与 Jellyfin 都接受该 scheme），原 token 载体保留
+- `auto`（默认推荐）：识别请求里已有的认证头家族；没有可识别 scheme 时，依次从 `X-Emby-Token` / `X-MediaBrowser-Token` / `Bearer` / 查询参数 `api_key`（或 `ApiKey`）提取 token，合成 `Authorization: MediaBrowser Token=...`（Emby 与 Jellyfin 都接受该 scheme），原 token 载体保留；已识别的 `Emby` scheme 会统一改写成 `MediaBrowser`，因为 Jellyfin 12 只接受后者，显式 `emby` 模式才保留 `Emby`
 - `emby`：强制改写为 `Emby` 家族，直连重定向查询参数用 `api_key`
 - `jellyfin`：强制改写为 `MediaBrowser` 家族，直连重定向查询参数用 `ApiKey`
 - `passthrough`：完全透传（保留原始认证头），不改写 `Authorization` / `X-Emby-Authorization` / `X-MediaBrowser-Authorization`，适合你已确认上游需要保留原始头部的场景
@@ -746,6 +746,10 @@ https://你的域名/hk/123
 > **Jellyfin 12 注意**：`EnableLegacyAuthorization` 默认关闭后，`X-Emby-Token`、`X-MediaBrowser-Token`、`X-Emby-Authorization`、`Emby` scheme 和 `api_key` 查询参数都会被上游忽略，只剩 `Authorization: MediaBrowser Token=...` 与 `ApiKey` 查询参数。`auto` 模式已自动补 `MediaBrowser` scheme；若客户端只把 token 放在 `api_key` / `ApiKey` 查询里、没有任何认证头，非 `passthrough` 模式的 Worker 会从查询参数提取 token 并补出 `Authorization` 头；若客户端发送的 `Authorization` / `X-Emby-Authorization` 只带设备信息、token 放在 `X-Emby-Token` 等头里，Worker 也会把 token 合并进 `Authorization`，这两种迁移场景都无需额外配置；`passthrough` 模式完全透传、不做改写。
 >
 > **直连回退**：只要客户端 Cookie 名称命中 `emby / jellyfin / mediabrowser / session / auth / token / credential / signature / secret` 等关键字，就判定为 Cookie 鉴权并回退到 Worker 代理，避免媒体鉴权丢失；代价是这部分流量不走直连。跨域重定向一律剥离客户端 `Authorization` 与 Cookie，只保留管理员显式配置的请求头。
+>
+> **节点地址**：Jellyfin 12 移除了 `/emby` 与 `/mediabrowser` 路由前缀，节点 `target` 建议直接填站点根（如 `https://jellyfin.example`）。Worker 的节点探测和上游 `Location` 映射会容忍多出来的 `/emby` 根，普通代理请求、PlaybackInfo 改写与元数据预热仍严格按配置的 `target` 基路径回源。
+>
+> **直连鉴权补全**：媒体直连重定向在客户端的媒体鉴权可随查询参数携带时（`Authorization` / `X-Emby-Authorization` 带 `Token=`、`X-Emby-Token` / `X-MediaBrowser-Token`，或 `api_key` / `ApiKey` 查询参数）才会把 token 补到跳转 URL（`auto` 同时补 `api_key` 与 `ApiKey`，`emby` 只补 `api_key`，`jellyfin` 只补 `ApiKey`）；携带私密鉴权 Cookie、非 Token `Authorization`（如 Basic）或 `X-Emby-Auth-Token` 等私密鉴权头的客户端不补。这类客户端遇到跨域跳转时，Worker 会在跳数用尽等中断点返回 409，而不是把无鉴权的节点 `Location` 透传给客户端。
 
 ### 上游真实 IP 透传控制
 

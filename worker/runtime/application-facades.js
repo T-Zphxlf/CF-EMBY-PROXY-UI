@@ -11797,10 +11797,45 @@ function isNodeVideoStreamDirectEnabled(node, currentConfig = null, nodeNameHint
 function resolveRedirectTarget(location, baseUrl) {
   if (!location) return null;
   try {
-    return new URL(location, baseUrl instanceof URL ? baseUrl : String(baseUrl || ""));
+    const resolved = new URL(location, baseUrl instanceof URL ? baseUrl : String(baseUrl || ""));
+    // 只放行 http/https：上游 Location 里的 javascript:/data: 等 scheme 不能下发给客户端。
+    return ["http:", "https:"].includes(resolved.protocol) ? resolved : null;
   } catch {
     return null;
   }
+}
+function isClientFollowableRedirectStatus(status) {
+  // 304 没有 Location 语义；300/305/306 不作为可跟随重定向处理。
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+function isExternalClientRedirectLocation(location, workerOrigin) {
+  if (!location || !/^https?:\/\//i.test(location)) return false;
+  try {
+    const url = new URL(location);
+    return !workerOrigin || url.origin !== workerOrigin;
+  } catch {
+    return false;
+  }
+}
+function resolveExternalRedirectAuth(execution, transport) {
+  // 只有媒体请求、且客户端仅用查询参数鉴权时，才把 token 补到外部跳转 URL：
+  // 头与 Cookie 无法经浏览器跳转携带，也不能把凭据写到外部主机。
+  const traits = execution?.requestTraits || {};
+  if (
+    traits.isPlaybackCriticalRequest !== true &&
+    traits.isImage !== true &&
+    traits.isSubtitle !== true
+  )
+    return null;
+  const policy =
+    transport?.clientRedirectAuthPolicy ||
+    evaluateMediaClientRedirectAuthPolicy(transport?.newHeaders || execution.request.headers);
+  if (transport && typeof transport === "object") transport.clientRedirectAuthPolicy = policy;
+  return {
+    policy,
+    mode: execution.effectiveMediaAuthMode,
+    canDirect: policy.canDirect === true,
+  };
 }
 function normalizeRedirectMethod(status, method = "GET") {
   const upperMethod = String(method || "GET").toUpperCase();
@@ -16047,7 +16082,38 @@ function buildFastSegmentUpstreamUrlText(targetRecord, proxyPath = "/", search =
   const resolvedPrefix = targetRecord.absoluteBasePrefix || targetRecord.originText;
   return `${(safeProxyPath === "/" ? `${resolvedPrefix}/` : `${resolvedPrefix}${safeProxyPath}`) || `${targetRecord.originText}/`}${safeSearch}`;
 }
-function resolveProxyRelativePathFromUpstreamUrl(upstreamUrl, activeTargetBase) {
+var LEGACY_TARGET_ROOT_SEGMENTS = /* @__PURE__ */ new Set(["emby", "mediabrowser"]);
+function stripLegacyTargetRootSuffix(basePath = "") {
+  const segments = String(basePath || "")
+    .split("/")
+    .filter(Boolean);
+  if (!segments.length) return null;
+  if (!LEGACY_TARGET_ROOT_SEGMENTS.has(segments[segments.length - 1].toLowerCase())) return null;
+  const trimmed = segments.slice(0, -1);
+  return trimmed.length ? `/${trimmed.join("/")}` : "";
+}
+function matchTargetBasePath(pathname = "/", basePath = "", options = {}) {
+  const safePath = sanitizeProxyPath(pathname || "/");
+  const safeBase = normalizeTargetBasePath(String(basePath || ""));
+  const match = (path, base) => {
+    if (!base) return path;
+    const lowerPath = path.toLowerCase();
+    const lowerBase = base.toLowerCase();
+    if (lowerPath === lowerBase || lowerPath === `${lowerBase}/`) return "/";
+    if (lowerPath.startsWith(`${lowerBase}/`)) return path.slice(base.length);
+    return null;
+  };
+  const direct = match(safePath, safeBase);
+  if (direct !== null) return direct;
+  // 旧版 /emby、/mediabrowser 根在 Jellyfin 12 被移除；只有重定向映射需要这个兜底，
+  // prewarm 与 PlaybackInfo 改写必须严格按配置 base 匹配，避免把 base 外路径映射成代理路径。
+  if (options.allowLegacyRootFallback !== true) return null;
+  // 节点 target 仍带旧根时，上游返回的无前缀路径也要映射回代理路径，而不是被当成外部地址下发。
+  const withoutLegacyRoot = stripLegacyTargetRootSuffix(safeBase);
+  if (withoutLegacyRoot === null) return null;
+  return match(safePath, withoutLegacyRoot);
+}
+function resolveProxyRelativePathFromUpstreamUrl(upstreamUrl, activeTargetBase, options = {}) {
   try {
     const resolvedUrl =
       upstreamUrl instanceof URL
@@ -16063,18 +16129,15 @@ function resolveProxyRelativePathFromUpstreamUrl(upstreamUrl, activeTargetBase) 
         proxyPath: null,
       };
     const basePath = normalizeTargetBasePath(targetBase.pathname);
-    let proxyPath = resolvedUrl.pathname || "/";
-    if (basePath)
-      if (proxyPath === basePath || proxyPath === `${basePath}/`) proxyPath = "/";
-      else if (proxyPath.startsWith(`${basePath}/`)) proxyPath = proxyPath.slice(basePath.length);
-      else
-        return {
-          resolvedUrl,
-          proxyPath: null,
-        };
+    const matchedProxyPath = matchTargetBasePath(resolvedUrl.pathname || "/", basePath, options);
+    if (matchedProxyPath === null)
+      return {
+        resolvedUrl,
+        proxyPath: null,
+      };
     return {
       resolvedUrl,
-      proxyPath: sanitizeProxyPath(proxyPath),
+      proxyPath: sanitizeProxyPath(matchedProxyPath),
     };
   } catch {
     return {
@@ -16094,6 +16157,7 @@ function translateUpstreamUrlToProxyLocation(
     const { resolvedUrl, proxyPath } = resolveProxyRelativePathFromUpstreamUrl(
       upstreamUrl,
       activeTargetBase,
+      { allowLegacyRootFallback: true },
     );
     if (!resolvedUrl) return null;
     if (!proxyPath) return resolvedUrl.toString();
@@ -20409,9 +20473,12 @@ function appendMediaRedirectAuthToUrl(targetUrl, headersOrPolicy, mediaAuthMode 
       : effectiveMediaAuthMode === "emby"
         ? ["api_key"]
         : ["api_key", "ApiKey"];
-  // 只按当前模式认可的名字判重：Jellyfin 12 关闭 legacy 后不认 api_key，Emby 不认 ApiKey。
-  if (auth.token && !tokenQueryKeys.some((key) => safeUrl.searchParams.has(key)))
-    for (const tokenQueryKey of tokenQueryKeys) safeUrl.searchParams.set(tokenQueryKey, auth.token);
+  // 逐名补全：Jellyfin 12 关闭 legacy 后只认 ApiKey，Emby 只认 api_key；
+  // auto 模式即使已存在其中一个名字，也必须补上另一个，否则上游会忽略现存的名字。
+  if (auth.token)
+    for (const tokenQueryKey of tokenQueryKeys)
+      if (!safeUrl.searchParams.has(tokenQueryKey))
+        safeUrl.searchParams.set(tokenQueryKey, auth.token);
   if (auth.deviceId && !hasRedirectQueryAlias(safeUrl, MEDIA_REDIRECT_DEVICE_QUERY_KEYS))
     safeUrl.searchParams.set("DeviceId", auth.deviceId);
   return safeUrl;
@@ -20484,8 +20551,10 @@ function normalizeMediaAuthHeaders(headers, nodeMediaAuthMode = "auto", queryTok
     }
   }
   if (!canonicalAuthorization) return headers;
+  const recognizedScheme = standardScheme || mediaBrowserScheme || legacyEmbyScheme || "";
+  // auto 无法确定上游版本：Emby scheme 被 Jellyfin 12 拒绝，MediaBrowser scheme 两者都接受。
   const targetScheme =
-    fixedScheme || standardScheme || mediaBrowserScheme || legacyEmbyScheme || "";
+    fixedScheme || (recognizedScheme === "emby" ? "mediabrowser" : recognizedScheme);
   canonicalAuthorization = rewriteMediaAuthorizationScheme(canonicalAuthorization, targetScheme);
   headers.set("Authorization", canonicalAuthorization);
   // X-Emby-Authorization 是 Emby 与 Jellyfin ≤11 的旧别名（Jellyfin 12 仅在 legacy 开启且无 Authorization 时兜底读取）；X-MediaBrowser-Authorization 上游不读取。
@@ -23724,6 +23793,7 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
           imageCacheMaxAge: execution.imageCacheMaxAge,
         },
       );
+      const externalRedirectAuth = resolveExternalRedirectAuth(execution, transport);
       kernel.applyProxyRedirectHeaders(
         modifiedHeaders,
         finalUpstreamState.response,
@@ -23735,8 +23805,26 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
         {
           linkVariant: execution.linkVariant,
           entryMode: execution.entryMode,
+          externalRedirectAuth,
+          workerOrigin: execution.requestUrl instanceof URL ? execution.requestUrl.origin : "",
         },
       );
+      if (
+        externalRedirectAuth &&
+        externalRedirectAuth.canDirect !== true &&
+        !finalUpstreamState.directRedirectUrl &&
+        isClientFollowableRedirectStatus(Number(finalUpstreamState.response.status)) &&
+        isExternalClientRedirectLocation(
+          modifiedHeaders.get("Location"),
+          execution.requestUrl instanceof URL ? execution.requestUrl.origin : "",
+        )
+      ) {
+        // 直连不可用时，跳数用尽等中断点也不能把无鉴权的跨域 Location 甩给客户端，
+        // 与 DIRECT 分支的 409 策略保持一致。
+        throw kernel.createDirectTransportIncompatibleError(execution, {
+          redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
+        });
+      }
       if (shouldPlaybackFallbackRedirect) {
         sanitizeSyntheticRedirectHeaders(modifiedHeaders);
         modifiedHeaders.set("Location", execution.playbackAbsoluteFallbackLocation || "/");
@@ -28473,17 +28561,36 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
       responseUrl,
       options = {},
     ) {
+      const finalizeClientLocation = (target) => {
+        const value = target instanceof URL ? target.toString() : String(target || "");
+        const auth = options.externalRedirectAuth;
+        if (!auth || auth.canDirect !== true || !/^https?:\/\//i.test(value)) return value;
+        try {
+          const externalUrl = new URL(value);
+          // 同源（Worker 自身）的代理跳转不需要把 token 写进 URL；只有外部主机才补查询鉴权。
+          if (options.workerOrigin && externalUrl.origin === options.workerOrigin) return value;
+          return appendMediaRedirectAuthToUrl(externalUrl, auth.policy, auth.mode).toString();
+        } catch {
+          return value;
+        }
+      };
       if (directRedirectUrl) {
         sanitizeSyntheticRedirectHeaders(modifiedHeaders);
-        modifiedHeaders.set("Location", directRedirectUrl.toString());
+        modifiedHeaders.set("Location", finalizeClientLocation(directRedirectUrl));
         modifiedHeaders.set("Cache-Control", "no-store");
         return;
       }
-      if (!(response.status >= 300 && response.status < 400)) return;
+      if (!isClientFollowableRedirectStatus(response.status)) return;
       const location = modifiedHeaders.get("Location");
       if (!location) return;
+      const resolvedTarget = resolveRedirectTarget(location, responseUrl || activeTargetBase);
+      if (!resolvedTarget) {
+        // 非 http(s) 或无法解析的上游 Location 不能下发到客户端。
+        modifiedHeaders.delete("Location");
+        return;
+      }
       const rewrittenLocation = translateUpstreamUrlToProxyLocation(
-        resolveRedirectTarget(location, responseUrl || activeTargetBase),
+        resolvedTarget,
         activeTargetBase,
         name,
         key,
@@ -28492,7 +28599,8 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
           entryMode: options.entryMode,
         },
       );
-      if (rewrittenLocation) modifiedHeaders.set("Location", rewrittenLocation);
+      if (rewrittenLocation)
+        modifiedHeaders.set("Location", finalizeClientLocation(rewrittenLocation));
     },
     buildClientVisibleRedirectUrl(
       upstreamUrl,
