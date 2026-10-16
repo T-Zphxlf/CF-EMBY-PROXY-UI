@@ -58,6 +58,7 @@
 - 实现“反代 + 直连”混合路由
 
 项目当前版本由模块化 Worker 源码和同源管理端组成：`worker/index.js` 是唯一生产入口，`worker/` 内按 core、runtime 和代理功能域组织源码，构建后生成根目录 `worker.js` 单文件部署产物；管理端则由 `frontend/admin-runtime.template.html` 与 `frontend/scripts/admin-runtime-enhancements.mjs` 组合，经 Vite 输出到 `frontend/dist/index.html`，再由 Wrangler Static Assets 与 Worker 一起部署。
+应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`：Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都从它派生。发布时只改这一处，并同步本 README 与 `AGENTS.md` 的版本字样；`npm.cmd run check` 的 version consistency 项会校验三者一致。设置项与绑定/键的完整映射见 [`docs/architecture.md` 第 8 节](./docs/architecture.md#8-设置项与绑定键映射)。
 
 ---
 
@@ -114,19 +115,40 @@
 ## 架构总览
 
 ```mermaid
-flowchart LR
-    U[客户端 / 播放器] --> W[Worker 控制面]
-    W --> A["管理面板 (ADMIN_PATH)"]
-    W --> C["鉴权 / 路由 / UI / 元数据预热"]
-    C --> KV[(Cloudflare KV)]
-    C --> D1[(Cloudflare D1)]
-    C --> G["CF 原生数据面 / Cache Rules"]
-    G --> E[Emby / Jellyfin 源站]
-    G --> X[外部直链 / 网盘 / 对象存储]
-    S[scheduled 定时任务] --> D1
-    S --> TG[Telegram 日报]
-    A --> CF[Cloudflare GraphQL Analytics]
+flowchart TD
+  Client[客户端 / 播放器] --> Entry["worker/index.js<br/>createWorkerApplication()"]
+  Cron["Cron（每小时）"] --> Scheduled["ScheduledMaintenanceFacade<br/>scheduled()"]
+  Entry --> Route["buildNodeRouteContext<br/>host / path / ADMIN_PATH / 初始化健康"]
+
+  Route --> HostPrefix{"EnableHostPrefixProxy<br/>且 host 是配置 host 的子域?"}
+  HostPrefix -- 是 --> Proxy["NodeProxyFacade 节点代理"]
+  Route --> AdminRoute{"管理端路由?<br/>/ · favicon · ADMIN_PATH · login · vendor · POST 动作"}
+  AdminRoute -- 是 --> Admin["AdminConsoleFacade 管理端"]
+  AdminRoute -- 否 --> Proxy
+
+  Admin --> Landing["GET / 落地页<br/>标题注入 APP_VERSION"]
+  Admin --> Shell["管理端 HTML<br/>已上传 HTML 优先，否则 ASSETS /index.html"]
+  Admin --> AdminAPI["POST ADMIN_PATH<br/>JWT 校验后按 action 分发"]
+  Shell --> Client
+
+  Proxy --> NodeRoute{"节点解析<br/>host-prefix / 兼容路径 / /{node}/..."}
+  NodeRoute --> Policy["访问策略<br/>Geo / IP / 限速 / 节点密钥"]
+  Policy --> Header["请求头清洗<br/>Emby / Jellyfin 鉴权补丁"]
+  Header --> Upstream["回源<br/>failover / 探测 / 超时 / 重试"]
+  Upstream --> Redirect["重定向映射<br/>同源继续代理；跨域鉴权不可携带时 409"]
+  Redirect --> Playback["播放关键路径<br/>PlaybackInfo 改写 / manifest / segment / 有界缓存"]
+  Playback --> Client
+
+  Admin --> KV[("KV ENI_KV<br/>sys:theme · node:* · 快照 · HTML")]
+  Proxy --> KV
+  Admin --> D1[("D1 DB<br/>proxy_logs · stats · sys_status · 锁 · 认证失败")]
+  Proxy --> D1
+  Scheduled --> KV
+  Scheduled --> D1
+  Version["worker/core/build-info.js<br/>APP_VERSION"] --> Admin
 ```
+
+> 这张图与 [`docs/architecture.md` 第 1 节](./docs/architecture.md#1-总体形态)保持一致；更细的生命周期见下方「请求处理流程图」与 [`docs/architecture.md` 第 3 节](./docs/architecture.md#3-请求生命周期)。
 
 ---
 
@@ -773,6 +795,8 @@ https://你的域名/hk/123
 
 ### KV 速查清单
 
+
+> 全局设置与节点字段落到哪个 KV 绑定/键、又驱动哪些 D1 表，见 [`docs/architecture.md` 第 8 节「设置项与绑定/键映射」](./docs/architecture.md#8-设置项与绑定键映射)。
 #### 主要键位
 
 | 键位模式 | 用途 | 说明 |
@@ -886,43 +910,50 @@ https://你的域名/hk/123
 ## 请求处理流程图
 
 ```mermaid
-graph TD
-    Start(用户请求到达 Worker) --> Route{解析 URL 路径}
+flowchart TD
+  Start(用户请求到达 Worker) --> Ctx[构建 route context：host / path / ADMIN_PATH / 初始化健康]
+  Ctx --> HP{EnableHostPrefixProxy 且 host 是配置 host 的子域?}
+  HP -- 是 --> Proxy[NodeProxyFacade 节点代理]
+  Ctx --> Admin{管理端路由?}
 
-    Route -- "/" --> Landing[渲染落地页]
-    Route -- "ADMIN_PATH GET" --> RenderUI[下发 SaaS 管理面板骨架]
-    RenderUI --> LoginUI[前端按需显示登录态 / 未初始化提示]
+  Admin -- "GET / 或 favicon" --> Landing[落地页 / 静态图标<br/>标题注入 APP_VERSION]
+  Admin -- "ADMIN_PATH GET" --> Shell[管理端 HTML<br/>已上传 HTML 优先，否则 ASSETS /index.html]
+  Shell --> Client[返回客户端]
+  Admin -- "ADMIN_PATH/login POST" --> Login[Auth 登录校验<br/>绑定 D1 时按 IP 计失败并锁定]
+  Admin -- "ADMIN_PATH POST" --> Auth{JWT 校验}
+  Auth -- 失败 --> Err401[401 未授权]
+  Auth -- 通过 --> AdminAPI[按 action 分发：节点 / 设置 / 日志 / DNS / 备份]
+  Admin -- 否 --> Proxy
 
-    Route -- "ADMIN_PATH/login POST" --> LoginAPI[Auth.handleLogin]
-    Route -- "ADMIN_PATH POST" --> AuthCheckAPI{JWT 验证}
-    AuthCheckAPI -- 失败 --> Err401[401 未授权]
-    AuthCheckAPI -- 通过 --> AdminAPI[增删改查节点 / 设置 / 日志]
+  Proxy --> NodeRoute{"节点解析：host-prefix / 兼容路径 / /{节点名}/{密钥?}/{路径}"}
+  NodeRoute --> Exists{节点是否存在}
+  Exists -- 否 --> Err404[404 Not Found]
+  Exists -- 是 --> Policy[访问策略：Geo / IP / 限速 / 节点密钥]
+  Policy --> HeaderPatch[请求头清洗与 Emby / Jellyfin 鉴权补丁]
+  HeaderPatch --> Upstream[回源：failover / 探测 / 超时 / 重试]
+  Upstream --> Redirect{重定向映射<br/>只跟随 301 / 302 / 303 / 307 / 308}
 
-    Route -- "/{节点名}/{密钥?}/{路径}" --> LoadNode[从 KV 读取节点配置]
-    LoadNode --> Exists{节点是否存在}
-    Exists -- 否 --> Err404[404 Not Found]
-    Exists -- 是 --> Firewall[Geo / IP / 限速检查]
+  Redirect -- "同源" --> Follow[继续代理跳转]
+  Redirect -- "跨域且鉴权不可携带" --> Fail409[409 中断<br/>不透传节点 Location]
+  Redirect -- "外部直链" --> Direct[下发 Location]
+  Redirect -- "非 http(s) / 无法解析" --> Drop[删除 Location]
+  Redirect -- "无重定向" --> Resp[处理响应头]
 
-    Firewall --> HeaderPatch[请求头整理与 Emby 授权补丁]
-    HeaderPatch --> Upstream[发起回源请求]
-    Upstream --> Retry{403 / 协议异常?}
-    Retry -- 是 --> Fallback[剥离可疑头并重试一次]
-    Retry -- 否 --> Redirect{是否发生重定向}
+  Follow --> Resp
+  Resp --> Cache{分类缓存策略}
+  Cache -- 静态资源 --> StaticCache[边缘缓存]
+  Cache -- 视频流 --> PassThrough[沿用源站 / 数据面缓存头]
+  Cache -- PlaybackInfo --> Rewrite[PlaybackInfo 改写 / 有界缓存]
 
-    Fallback --> Redirect
-    Redirect -- 同源 --> Follow[继续代理跳转]
-    Redirect -- 外部直链 --> Direct[下发 Location]
-    Redirect -- 无 --> Resp[处理响应头]
-
-    Follow --> Resp
-    Resp --> Cache{分类缓存策略}
-    Cache -- 静态资源 --> StaticCache[边缘缓存]
-    Cache -- 视频流 --> PassThrough[沿用源站 / 数据面缓存头]
-
-    StaticCache --> Finish[返回客户端]
-    PassThrough --> Finish
-    Direct --> Finish
+  StaticCache --> Finish[返回客户端]
+  PassThrough --> Finish
+  Rewrite --> Finish
+  Direct --> Finish
+  Drop --> Finish
+  Fail409 --> Finish
 ```
+
+> 重定向分支对应当前版本的 fail-closed 行为：跨域但客户端鉴权无法随跳转携带时返回 409，而不是透传无鉴权的节点 `Location`；非 http(s) 或无法解析的 `Location` 一律删除。详细分层见 [`docs/architecture.md` 第 3 节](./docs/architecture.md#3-请求生命周期)。
 
 ---
 

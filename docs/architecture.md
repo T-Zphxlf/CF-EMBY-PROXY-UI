@@ -6,20 +6,39 @@
 
 ```mermaid
 flowchart TD
-  Client[客户端] --> Worker[worker/index.js]
-  Worker --> Route[createWorkerApplication 路由入口]
-  Route --> Admin[AdminConsoleFacade 管理端]
-  Route --> Proxy[NodeProxyFacade 节点代理]
-  Worker --> Cron[ScheduledMaintenanceFacade 定时维护]
-  Admin --> KV[(KV: 配置/节点/快照/HTML)]
-  Admin --> D1[(D1: 日志/统计/DNS/状态/缓存表)]
+  Client[客户端 / 播放器] --> Entry["worker/index.js<br/>createWorkerApplication()"]
+  Cron["Cron（每小时）"] --> Scheduled["ScheduledMaintenanceFacade<br/>scheduled()"]
+  Entry --> Route["buildNodeRouteContext<br/>host / path / ADMIN_PATH / 初始化健康"]
+
+  Route --> HostPrefix{"EnableHostPrefixProxy<br/>且 host 是配置 host 的子域?"}
+  HostPrefix -- 是 --> Proxy["NodeProxyFacade 节点代理"]
+  Route --> AdminRoute{"管理端路由?<br/>/ · favicon · ADMIN_PATH · login · vendor · POST 动作"}
+  AdminRoute -- 是 --> Admin["AdminConsoleFacade 管理端"]
+  AdminRoute -- 否 --> Proxy
+
+  Admin --> Landing["GET / 落地页<br/>标题注入 APP_VERSION"]
+  Admin --> Shell["管理端 HTML<br/>已上传 HTML 优先，否则 ASSETS /index.html"]
+  Admin --> AdminAPI["POST ADMIN_PATH<br/>JWT 校验后按 action 分发"]
+  Shell --> Client
+
+  Proxy --> NodeRoute{"节点解析<br/>host-prefix / 兼容路径 / /{node}/..."}
+  NodeRoute --> Policy["访问策略<br/>Geo / IP / 限速 / 节点密钥"]
+  Policy --> Header["请求头清洗<br/>Emby / Jellyfin 鉴权补丁"]
+  Header --> Upstream["回源<br/>failover / 探测 / 超时 / 重试"]
+  Upstream --> Redirect["重定向映射<br/>同源继续代理；跨域鉴权不可携带时 409"]
+  Redirect --> Playback["播放关键路径<br/>PlaybackInfo 改写 / manifest / segment / 有界缓存"]
+  Playback --> Client
+
+  Admin --> KV[("KV ENI_KV<br/>sys:theme · node:* · 快照 · HTML")]
   Proxy --> KV
-  Proxy --> Upstream[Emby 上游节点]
-  Cron --> KV
-  Cron --> D1
-  Admin --> HTML[模板 + runtime enhancements]
-  HTML --> Client
+  Admin --> D1[("D1 DB<br/>proxy_logs · stats · sys_status · 锁 · 认证失败")]
+  Proxy --> D1
+  Scheduled --> KV
+  Scheduled --> D1
+  Version["worker/core/build-info.js<br/>APP_VERSION"] --> Admin
 ```
+
+图 1 是端到端运行时总览：`fetch` 与 `scheduled` 两个入口、控制面（管理端与路由）和数据面（节点代理）的分工，以及 KV / D1 两个持久化边界。第 3、4 节展开请求生命周期与管理端投递链，第 8 节给出设置项与绑定/键的对应关系。
 
 ## 2. Worker 源码分层
 
@@ -48,8 +67,10 @@ flowchart TD
 2. 如果启用 `EnableHostPrefixProxy` 且请求 host 是配置 host 的子域，优先进入 host-prefix 节点代理。
 3. 对 `/`、`/favicon.ico`、`ADMIN_PATH`、`ADMIN_PATH/login`、管理端 vendor 路径和 POST 管理动作，交给 `AdminConsoleFacade`。
 4. 其余请求交给 `NodeProxyFacade`。它按 host-prefix、兼容路径、普通 `/<node>/...` 路由解析节点，再调用 proxy workflow。
-5. 代理 workflow 负责节点读取、访问策略、failover/探测、上游请求、流式响应、metadata cache、PlaybackInfo 改写和访问日志。
+5. 代理 workflow 负责节点读取、访问策略、failover/探测、上游请求、流式响应、重定向映射、metadata cache、PlaybackInfo 改写和访问日志。
 6. `scheduled()` 单独交给 `ScheduledMaintenanceFacade`，处理 KV/D1 整理、日志/统计维护和定时报告。
+
+重定向映射是当前版本的加固重点：Worker 只跟随 301/302/303/307/308，把上游 `Location` 归一化到 target base（路径大小写不敏感，legacy `/emby`、`/mediabrowser` 根兜底只用于映射），非 http(s) 或无法解析的 `Location` 直接删除；当客户端鉴权无法随跳转携带时，跨域重定向在中断点 fail-closed 返回 409，而不是透传无鉴权的节点 `Location`。相关实现位于 facade 的 proxy/redirect region。
 
 节点代理需要特别注意播放关键路径：PlaybackInfo、manifest、segment、视频下载和播放会话路径会走更严格的 body 上限、缓存分区、重写和生命周期控制；相关代码位于 `worker/runtime/proxy/playback/` 及 facade 中的 `proxy/playback` region。
 
@@ -109,5 +130,25 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 
 - Cloudflare 绑定和 Cron 位于 `wrangler.toml`：KV binding `ENI_KV`、D1 binding `DB`、静态前端 binding `ASSETS`，Cron 为每小时一次。
 - Worker 环境变量包括 `HOST`、可选 `LEGACY_HOST`、`ADMIN_PATH`、`JWT_SECRET`、`ADMIN_PASS` 以及兼容的绑定名称。
+- 应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`；Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生。发布时改这一处，并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
 - 前端环境变量位于 `frontend/.env.example`，主要控制 API base、admin path、CDN base、release channel 和开发代理目标。
 - 前端外部 vendor 资源由 CDN path 检查器约束；不要在生产模板中引入 inline dynamic import 或未声明的相对发布资源。
+
+## 8. 设置项与绑定/键映射
+
+管理端“设置页”维护的所有全局配置只有两个可能落点：写配置时进 KV `ENI_KV` 的 `sys:theme`（单个 JSON 文档，`saveConfig` / `importSettings` 都会先记一份 `sys:config_snapshots:v1` 快照），节点级字段进 `node:{name}`。D1 不保存或投影设置，只保存运行时数据，所以下表的“绑定/键”列对全局行都是同一份 `sys:theme`，差异体现在生效链路和被它驱动的 D1 表上。
+
+| 设置分区 | 代表字段（`sys:theme` 键名） | 绑定 / 键 | 生效链路 |
+| --- | --- | --- | --- |
+| 系统 UI | `settingsExperienceMode`、`uiRadiusPx`、`multiLinkCopyPanelEnabled`、`dashboardShowD1WriteHotspot`、`dashboardShowKvD1Status` | KV `ENI_KV` → `sys:theme` | 管理端 HTML 渲染 |
+| 代理与网络 | `protocolStrategy`、`enableHostPrefixProxy`、`enablePrewarm`、`prewarmDepth`、`routingDecisionMode`、`playbackInfoCache*`、`videoProgressForward*`、`directStaticAssets`、`directHlsDash`、`sourceDirectNodes`、`pingTimeout`、`hedge*`、`upstreamTimeoutMs`、`upstreamRetryAttempts`、`defaultPlaybackInfoMode`、`defaultRealClientIpMode`、`defaultMediaAuthMode` 等 | KV `ENI_KV` → `sys:theme`（节点级可被 `node:{name}` 覆盖） | 代理 workflow |
+| 静态资源策略 | `cacheTtlImages`、`corsOrigins` | KV `ENI_KV` → `sys:theme` | 缓存与响应头 |
+| 安全防护 | `geoAllowlist`、`geoBlocklist`、`ipBlacklist`、`rateLimitRpm` | KV `ENI_KV` → `sys:theme` | 代理访问策略 |
+| 日志设置 | `logEnabled`、`logSearchMode`、`logWrite*`、`logDisplay*`、`logRetentionDays`、`logWriteDelayMinutes`、`logFlushCountThreshold`、`logBatch*`、`scheduledLeaseMs` | KV `ENI_KV` → `sys:theme` | 写 D1 `proxy_logs` / 定时清理 |
+| 监控告警 | `tgBotToken`、`tgChatId`、`tgAlert*`、`tgDailyReport*`、`scheduleUtcOffsetMinutes`、`cfQuotaPlan*` | KV `ENI_KV` → `sys:theme` | 定时任务 / Telegram |
+| 账号设置 | `jwtExpiryDays`、`cfAccountId`、`cfZoneId`、`cfApiToken`、`cfKvNamespaceId`、`cfD1DatabaseId`、`tmdb*`、`indexUrl` | KV `ENI_KV` → `sys:theme` | 登录态 / Cloudflare API |
+| 备份与恢复 | 无设置字段 | KV `sys:config_snapshots:v1`、`sys:config_meta:v1`；节点 `node:*` + `sys:nodes_index:v1` | `export*` / `import*` / `restore*` action |
+
+节点级字段写入 `node:{name}`、不进 `sys:theme`：`nodeName`、`entryMode`、`secret`、`orderedTargets`、`headers`、`tags`、`remark`、`activeLineId`，以及可选的 `playbackInfoMode`、`mediaAuthMode`、`realClientIpMode`、`routingDecisionMode`、`mainVideoStreamMode`。索引 `sys:nodes_index:v1` 是列表/导入导出的读入口，缺失时可由 `node:*` 重建。
+
+敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key` 属于 `CONFIG_SECRET_FIELDS`：普通导出、运行时快照和日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。
