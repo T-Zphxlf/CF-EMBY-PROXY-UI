@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V19.6-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V19.7-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.6** 在原有新手 / 高手设置模式、配置快照和分区导航基础上，重点强化 Jellyfin 12 兼容（探测根与媒体鉴权的 `/emby` 前缀回退）、节点与故障转移探测的完整请求头 / 入站 User-Agent / 403 处理，并加入 `medb.lat` 媒体库计数与 vendor 缓存版本化；同时继续保留控制面 / 数据面分层、缓存键清洗、转码 `m3u8` 禁缓存、Geo 白/黑名单模式切换等优化。
+> 当前 **V19.7** 在原有新手 / 高手设置模式、配置快照和分区导航基础上，继续强化 Jellyfin 12 兼容与重定向安全：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全、`auto` 模式统一改写 `Emby` scheme、跨域重定向在鉴权不可携带时改为 fail-closed（返回 409 而非透传无鉴权 `Location`），并把 legacy `/emby` 兜底收敛到重定向映射；同时保留控制面 / 数据面分层、缓存键清洗、转码 `m3u8` 禁缓存、Geo 白/黑名单模式切换等优化。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 

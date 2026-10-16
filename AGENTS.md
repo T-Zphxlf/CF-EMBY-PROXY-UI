@@ -44,11 +44,10 @@
 
 
 
-## V19.6版本
+## V19.7版本
 
 ## 更新摘要
 
 
-- **Jellyfin 12 兼容**：`/emby` 前缀移除后，节点探测与故障转移探测自动回退无前缀根；媒体鉴权可从 `api_key` / `ApiKey` 查询参数或独立 token 头提取 token 并合成、合并进 `Authorization`；直连重定向按节点鉴权模式选择 `api_key` / `ApiKey` 命名；README 补充 Jellyfin 12 legacy 鉴权与直连回退说明。
-- **探测与故障转移**：节点与故障转移探测发送完整客户端请求头、跟随入站 `User-Agent`，新增 `/emby/system/ping` 兜底路径，并把 403 视为节点可达；健康探测保留节点端口；管理端节点卡片展示实际探测路径与 403 可达状态。
-- **功能与修复**：为 emos 节点提供 `medb.lat` 媒体库计数；忽略会破坏请求头的查询 token 值；vendor 资源缓存 key 加入 schema 版本以淘汰旧缓存；清理不可达探测分支与死代码。
+- **重定向与鉴权加固**：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全；`auto` 模式把已识别的 `Emby` scheme 改写为 `MediaBrowser`；客户端鉴权无法随跳转携带时，跨域重定向在跳数用尽等中断点返回 409，不再透传无鉴权的节点 `Location`。
+- **重定向映射**：target base 路径大小写不敏感；legacy `/emby`、`/mediabrowser` 根兜底仅用于 `Location` 映射，PlaybackInfo 改写与元数据预热保持严格 base 匹配；只跟随 301/302/303/307/308，非 http(s) 或无法解析的 `Location` 一律删除。
