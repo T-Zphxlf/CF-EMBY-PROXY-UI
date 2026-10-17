@@ -51,5 +51,3 @@
 
 - **重定向与鉴权加固**：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全；`auto` 模式把已识别的 `Emby` scheme 改写为 `MediaBrowser`；客户端鉴权无法随跳转携带时，跨域重定向在跳数用尽等中断点返回 409，不再透传无鉴权的节点 `Location`。
 - **重定向映射**：target base 路径大小写不敏感；legacy `/emby`、`/mediabrowser` 根兜底仅用于 `Location` 映射，PlaybackInfo 改写与元数据预热保持严格 base 匹配；只跟随 301/302/303/307/308，非 http(s) 或无法解析的 `Location` 一律删除。
-- **Proxy 性能**：PlaybackInfo 缓存命中直接复用写入时解析的 payload，不再重复 `new Headers` + `JSON.parse`；代价是条目常驻解析对象（约 3–4× body，受 `maxTotalBytes` 约束）。`/web` 子树的百分号解码封顶 4 层，≥5 层编码按普通代理路径处理，避免鉴权前的 O(n²) 开销。
-- **管理端性能**：管理端 shell HTML 的标签扫描与内联 `import()` 搜索不再整篇 `toLowerCase()`，改用缓存的大小写不敏感正则和 `indexOf` 跳跃；`exportConfig` 的备份载荷只序列化一次。
