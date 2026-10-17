@@ -75,6 +75,7 @@ const {
   isAdminIndexSetupForced,
   isAdminWarmRoute,
   isMutableJsdelivrGithubAssetUrl,
+  iterateAdminHtmlOpeningTags,
   patchAdminShellRuntimeStatus,
   renderAdminLoginPage,
   renderAdminPage,
@@ -6732,11 +6733,59 @@ test("admin shell parsing rejects hidden markup and dynamic imports without recu
     },
   ]);
   assert.deepEqual(collectAdminInlineDynamicImports("{".repeat(10000) + "}".repeat(10000)), []);
+  // 跳点扫描：标识符边界、成员调用、注释空白，以及相邻两次 import() 都不能漏
+  assert.deepEqual(collectAdminInlineDynamicImports('myimport("x")'), []);
+  assert.deepEqual(collectAdminInlineDynamicImports('imports("x")'), []);
+  assert.deepEqual(collectAdminInlineDynamicImports('a.import("x")'), []);
+  const spacedImport = 'import  /* c */ ("https://evil.test/a.js")';
+  assert.equal(collectAdminInlineDynamicImports(spacedImport).length, 1);
+  const adjacentImports = 'import("a");import("b")';
+  assert.deepEqual(
+    collectAdminInlineDynamicImports(adjacentImports).map((entry) => entry.index),
+    [adjacentImports.indexOf("import"), adjacentImports.lastIndexOf("import")],
+  );
   assert.ok(
     getAdminRemoteShellAssetPolicyViolations(
       `<!doctype html><html><body><div id="app"></div><script>${dynamicImportExpression}</script></body></html>`,
       "https://example.test/index.html",
     ).some((violation) => violation.includes("inline")),
+  );
+});
+
+test("admin shell finds closing tags case-insensitively without folding the whole document", () => {
+  const upper =
+    '<HTML><HEAD><SCRIPT id="boot">var a = 1;</SCRIPT></HEAD><BODY><DIV ID="app"></DIV></BODY></HTML>';
+  const upperScript = [...iterateAdminHtmlOpeningTags(upper)].find(
+    (tag) => tag.tagName === "script",
+  );
+  assert.equal(upperScript.contentClosed, true);
+  assert.equal(upper.slice(upperScript.contentStart, upperScript.contentEnd), "var a = 1;");
+
+  // 闭合边界必须是空白、/ 或 >：</scripty> 不算闭合
+  const tricky = '<div id="app"></div><script>var s = "</scripty>";</script>';
+  const trickyScript = [...iterateAdminHtmlOpeningTags(tricky)].find(
+    (tag) => tag.tagName === "script",
+  );
+  assert.equal(trickyScript.contentClosed, true);
+  assert.equal(
+    tricky.slice(trickyScript.contentStart, trickyScript.contentEnd),
+    'var s = "</scripty>";',
+  );
+
+  // 未闭合的跳过内容标签吞到文档末尾（原有语义）
+  const unclosed = '<div id="app"></div><script>var x = 1;';
+  const unclosedScript = [...iterateAdminHtmlOpeningTags(unclosed)].find(
+    (tag) => tag.tagName === "script",
+  );
+  assert.equal(unclosedScript.contentClosed, false);
+  assert.equal(unclosedScript.contentEnd, unclosed.length);
+
+  // 标签名仍按小写输出，且 <template>/<title> 同样按跳过内容标签处理
+  assert.deepEqual(
+    [...iterateAdminHtmlOpeningTags("<template><b>x</b></template><title>T</title>")].map(
+      (tag) => tag.tagName,
+    ),
+    ["template", "title"],
   );
 });
 

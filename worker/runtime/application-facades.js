@@ -3644,29 +3644,31 @@ function defineAdminShellAssets(dependencies = {}, shell = {}) {
       tagEnd,
     };
   }
-  function findAdminHtmlClosingTag(sourceHtml, lowerSourceHtml, tagName, contentStart) {
-    const closingPrefix = `</${tagName}`;
-    let searchStart = contentStart;
-    while (searchStart < sourceHtml.length) {
-      const closingStart = lowerSourceHtml.indexOf(closingPrefix, searchStart);
-      if (closingStart < 0) return null;
-      const boundary = sourceHtml[closingStart + closingPrefix.length] || "";
-      if (!boundary || isAdminHtmlSpace(boundary) || boundary === "/" || boundary === ">") {
-        const tagEnd = findAdminHtmlTagEnd(sourceHtml, closingStart + closingPrefix.length);
-        if (tagEnd >= 0)
-          return {
-            start: closingStart,
-            tagEnd,
-          };
-        return null;
-      }
-      searchStart = closingStart + closingPrefix.length;
+  // 大小写不敏感地找闭合标签，且不为整份文档复制 toLowerCase()（700KB 级 index.html 每次遍历都要复制一次）。
+  const adminHtmlClosingTagPatterns = new Map();
+  function getAdminHtmlClosingTagPattern(tagName) {
+    let pattern = adminHtmlClosingTagPatterns.get(tagName);
+    if (!pattern) {
+      pattern = new RegExp(`</${escapeRegexForRoute(tagName)}(?=[ \\t\\n\\f\\r/>]|$)`, "gi");
+      adminHtmlClosingTagPatterns.set(tagName, pattern);
     }
-    return null;
+    pattern.lastIndex = 0;
+    return pattern;
+  }
+  function findAdminHtmlClosingTag(sourceHtml, tagName, contentStart) {
+    const pattern = getAdminHtmlClosingTagPattern(tagName);
+    pattern.lastIndex = contentStart;
+    const match = pattern.exec(sourceHtml);
+    if (!match) return null;
+    const tagEnd = findAdminHtmlTagEnd(sourceHtml, match.index + match[0].length);
+    if (tagEnd < 0) return null;
+    return {
+      start: match.index,
+      tagEnd,
+    };
   }
   function* iterateAdminHtmlOpeningTags(html = "") {
     const sourceHtml = String(html || "");
-    const lowerSourceHtml = sourceHtml.toLowerCase();
     let cursor = 0;
     while (cursor < sourceHtml.length) {
       const tagStart = sourceHtml.indexOf("<", cursor);
@@ -3691,7 +3693,7 @@ function defineAdminShellAssets(dependencies = {}, shell = {}) {
       }
       const contentStart = openingTag.tagEnd + 1;
       const closingTag = ADMIN_HTML_SKIPPED_CONTENT_TAGS.has(openingTag.tagName)
-        ? findAdminHtmlClosingTag(sourceHtml, lowerSourceHtml, openingTag.tagName, contentStart)
+        ? findAdminHtmlClosingTag(sourceHtml, openingTag.tagName, contentStart)
         : null;
       const contentEnd = closingTag ? closingTag.start : contentStart;
       cursor = closingTag ? closingTag.tagEnd + 1 : contentStart;
@@ -4018,12 +4020,11 @@ function defineAdminShellAssets(dependencies = {}, shell = {}) {
       }
       return cursor;
     };
-    for (let cursor = 0; cursor < source.length;) {
-      if (
-        source.startsWith("import", cursor) &&
-        !isIdentifierPart(source[cursor - 1]) &&
-        !isIdentifierPart(source[cursor + 6])
-      ) {
+    // 用 indexOf 跳点：逐字符 startsWith 会让 640KB 内联脚本的扫描退化成纯 JS 字符循环（实测 1.7ms/次）。
+    // "import" 无自重叠（没有真前缀等于真后缀），命中后从 cursor + 6 继续不会漏匹配。
+    let cursor = source.indexOf("import");
+    while (cursor >= 0) {
+      if (!isIdentifierPart(source[cursor - 1]) && !isIdentifierPart(source[cursor + 6])) {
         let previous = cursor - 1;
         while (previous >= 0 && /\s/.test(source[previous])) previous -= 1;
         const callStart = skipTrivia(cursor + 6);
@@ -4033,7 +4034,7 @@ function defineAdminShellAssets(dependencies = {}, shell = {}) {
             reference: source.slice(cursor, callStart + 1),
           });
       }
-      cursor += 1;
+      cursor = source.indexOf("import", cursor + 6);
     }
     return imports;
   }
@@ -11558,12 +11559,12 @@ function defineConfigActions(dependencies = {}, actions = {}) {
         secretsRedacted: includeSecrets !== true,
         containsSecrets: includeSecrets === true,
       };
-      const importRequestBytes = new TextEncoder().encode(
-        JSON.stringify({
-          action: "importFull",
-          ...backupPayload,
-        }),
-      ).length;
+      // 只序列化一次：importFull 请求体是 {action:"importFull", ...backupPayload}，
+      // 等于把 payload 文本的首字节 '{' 换成包装前缀，因此字节数 = payload 字节数 + 前缀长度 - 1。
+      // 旧实现为此整包 JSON.stringify 一遍（含 760KB 级 index.html），再在 jsonResponse 里再序列化一遍。
+      const backupPayloadText = JSON.stringify(backupPayload);
+      const importRequestBytes =
+        getUtf8ByteLength(backupPayloadText) + '{"action":"importFull",'.length - 1;
       if (importRequestBytes > 12517376)
         return jsonError(
           "FULL_BACKUP_TOO_LARGE",
@@ -11576,7 +11577,7 @@ function defineConfigActions(dependencies = {}, actions = {}) {
             adminIndexBytes: Number(adminIndexUpload?.bytes) || 0,
           },
         );
-      return jsonResponse(backupPayload);
+      return new Response(backupPayloadText, { headers: jsonHeaders() });
     },
     async exportSettings(data, { env, request }) {
       const includeSecrets = data?.includeSecrets === true;
