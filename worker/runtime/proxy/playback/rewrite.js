@@ -1,5 +1,9 @@
 import { createPlaybackInfoRepresentation, isPlaybackInfoRepresentation } from "./contract.js";
 
+// 不变量：PlaybackInfoCacheStore 会共享表示层的 payload 对象（命中路径不再重新解析整包 body，
+// 见 cache.js 的 set/get）。本文件所有改写与清洗必须保持写时复制，
+// 禁止原地修改入参 payload、MediaSources 数组或其中的 MediaStreams/RequiredHttpHeaders。
+
 export function sanitizePlaybackInfoSerializedResponseHeaders(headers) {
   const sanitizedHeaders =
     headers instanceof Headers ? new Headers(headers) : new Headers(headers || {});

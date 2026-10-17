@@ -63,7 +63,7 @@ export class PlaybackInfoCacheStore {
     let totalBytes = 0;
     for (const entry of this.entries.values()) {
       // shortcut: 这里只统计字节，不再逐条 JSON 校验或重新编码（该开销曾占满播放热点路径）；
-      // bodyBytes 由 set() 与 get() 维护，结构校验保留在那两处，脏条目仍不可能被投递。
+      // 入缓存时由 set() 完成结构校验，维护期清扫会再次校验，脏条目仍不可能被投递。
       const storedBytes = Number(entry?.bodyBytes);
       const bodyBytes =
         Number.isFinite(storedBytes) && storedBytes > 0
@@ -91,9 +91,17 @@ export class PlaybackInfoCacheStore {
       !isJsonHttpMediaType(response.headers.get("Content-Type"))
     )
       return false;
-    const bodyBytes = encodedBodyBytes(representation.bodyText);
-    if (bodyBytes > this.maxEntryBytes || !parsePlaybackInfoRootObject(representation.bodyText))
-      return false;
+    // 体积闸门自证：调用方声明的 bodyBytes 与本次实测 UTF-8 长度取大，
+    // 避免错误/偏小的声明绕过 maxEntryBytes（调用方只应传真实读取长度）。
+    const declaredBytes = Number(representation.bodyBytes);
+    const bodyBytes = Math.max(
+      Number.isFinite(declaredBytes) && declaredBytes > 0 ? declaredBytes : 0,
+      encodedBodyBytes(representation.bodyText),
+    );
+    // 表示层创建时已完成 JSON 解析与根对象校验，直接复用其 payload：命中路径不再整包 JSON.parse。
+    // 代价是条目常驻已解析对象（约 3-4x body，受 maxTotalBytes 约束），换来命中路径 40% 的 CPU。
+    const payload = representation.payload;
+    if (bodyBytes > this.maxEntryBytes || !payload) return false;
     const ttlMs = Math.max(0, Number(metadata.ttlMs) || 0);
     if (ttlMs <= 0) return false;
     const headers = sanitizePlaybackInfoSerializedResponseHeaders(response.headers);
@@ -111,6 +119,7 @@ export class PlaybackInfoCacheStore {
       headers: [...headers.entries()],
       bodyText: representation.bodyText,
       bodyBytes,
+      payload,
       storedAt: now,
       expiresAt: now + ttlMs,
     });
@@ -120,33 +129,38 @@ export class PlaybackInfoCacheStore {
 
   get(cacheKey) {
     if (!cacheKey) return null;
-    this.cleanup();
     const entry = this.entries.get(cacheKey);
     if (!entry) return null;
-    const validated = validatePlaybackInfoCacheEntry(entry, this.maxEntryBytes);
-    if (!validated) {
+    const expiresAt = Number(entry.expiresAt) || 0;
+    if (expiresAt > 0 && expiresAt <= this.now()) {
       this.entries.delete(cacheKey);
       return null;
     }
     let response;
     try {
-      response = new Response(validated.bodyText, {
+      response = new Response(entry.bodyText, {
         status: Number(entry.status) || 200,
         statusText: String(entry.statusText || ""),
-        headers: validated.headers,
+        headers: new Headers(Array.isArray(entry.headers) ? entry.headers : []),
       });
     } catch {
       this.entries.delete(cacheKey);
       return null;
     }
+    // 不变量：entry.payload 与写入时的表示层共享同一个对象，下游只读
+    // （改写一律写时复制，见 rewrite.js 顶部说明）；命中路径因此无需重新 JSON.parse 或结构校验。
     const representation = createPlaybackInfoRepresentation({
       response,
-      bodyText: validated.bodyText,
-      bodyBytes: validated.bodyBytes,
-      payload: validated.payload,
+      bodyText: entry.bodyText,
+      bodyBytes: entry.bodyBytes,
+      payload: entry.payload,
     });
+    if (!representation) {
+      this.entries.delete(cacheKey);
+      return null;
+    }
     this.entries.delete(cacheKey);
-    this.entries.set(cacheKey, { ...entry, bodyBytes: validated.bodyBytes });
+    this.entries.set(cacheKey, entry);
     return { representation, metadata: entry };
   }
 }

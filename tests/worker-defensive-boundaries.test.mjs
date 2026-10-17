@@ -47,7 +47,11 @@ import {
   serializeBoundedLogDetailJson,
   serveMedbItemsCounts,
 } from "../worker/runtime/application-facades.js";
-import { inspectPlaybackInfoResponse } from "../worker/runtime/proxy/playback/contract.js";
+import {
+  createPlaybackInfoRepresentation,
+  inspectPlaybackInfoResponse,
+} from "../worker/runtime/proxy/playback/contract.js";
+import { PlaybackInfoCacheStore } from "../worker/runtime/proxy/playback/cache.js";
 
 const hooks = createTestApplication();
 assert.ok(hooks, "worker.js must expose Node test hooks");
@@ -4003,7 +4007,51 @@ test("playback-critical route detection preserves encoded and link-variant paths
   }
 });
 
-test("Emby Web proxy boundary rejects only the exact web subtree", async () => {
+// 同一条政策上界（isEmbyWebProxyPath 内的 4 层）同时是 CPU 放大器闸门。
+test("policy: Emby Web decode cap keeps pathological percent nesting linear", () => {
+  const pathological = `/%${"25".repeat(8000)}web/index.html`;
+  const startedAt = process.hrtime.bigint();
+  const isWeb = isEmbyWebProxyPath(pathological);
+  const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
+  assert.equal(isWeb, false);
+  // 未封上界时该路径是 O(n²)（本机秒级），封顶后单次调用应稳定在毫秒级
+  assert.ok(elapsedMs < 100, `bounded decode took ${elapsedMs.toFixed(1)}ms`);
+});
+
+test("metadata prewarm skips cloning and parsing when poster depth cannot produce targets", async () => {
+  const waitUntilTasks = [];
+  const ctx = {
+    waitUntil(task) {
+      waitUntilTasks.push(task);
+    },
+  };
+  const traits = { enablePrewarm: true, prewarmDepth: "poster" };
+  const schedule = (proxyPath) =>
+    proxyService.scheduleMetadataPrewarmResponse(
+      new Request(`https://worker.test/alpha${proxyPath}`),
+      new Response(JSON.stringify({ Items: [{ Id: "item-1", ImageTags: { Primary: "tag" } }] }), {
+        headers: { "Content-Type": "application/json" },
+      }),
+      traits,
+      new URL("https://origin.test"),
+      () => ({ method: "GET", headers: new Headers() }),
+      "alpha",
+      "",
+      new URL(`https://worker.test/alpha${proxyPath}`),
+      ctx,
+      { proxyPath, prewarmCacheTtl: 60, imageCacheMaxAge: 86400 },
+    );
+
+  schedule("/Users/u1/Items?Limit=100");
+  schedule("/Shows/9/Episodes");
+  assert.equal(waitUntilTasks.length, 0);
+
+  schedule("/Items/1");
+  assert.equal(waitUntilTasks.length, 1);
+  await Promise.all(waitUntilTasks);
+});
+
+test("policy: Emby Web proxy blocks the exact subtree and up to 4 encoding layers", async () => {
   const webPaths = [
     "/web",
     "/web/",
@@ -4034,6 +4082,19 @@ test("Emby Web proxy boundary rejects only the exact web subtree", async () => {
   for (const proxyPath of webPaths) assert.equal(isEmbyWebProxyPath(proxyPath), true, proxyPath);
   for (const proxyPath of nonWebPaths)
     assert.equal(isEmbyWebProxyPath(proxyPath), false, proxyPath);
+
+  // 政策边界，不是解码实现细节：1-4 层编码的 /web 必须拦截；≥5 层按普通代理路径处理。
+  // 上界同时封住 %25 逐层剥离的 O(n²)（鉴权前可被深层编码 URL 放大）。
+  // ≥5 层判定与源站一致：Emby 自身只做有限次 URL 解码，不会把 5 层编码路由到 /web。
+  // 若要改动上界，属于安全政策变更，需同步 isEmbyWebProxyPath 的注释与安全评审。
+  const encodeTimes = (times) => {
+    let encoded = "/web/index.html";
+    for (let pass = 0; pass < times; pass += 1) encoded = encodeURIComponent(encoded);
+    return `/${encoded}`;
+  };
+  for (let pass = 1; pass <= 4; pass += 1)
+    assert.equal(isEmbyWebProxyPath(encodeTimes(pass)), true, `nested-${pass}`);
+  assert.equal(isEmbyWebProxyPath(encodeTimes(5)), false);
 
   let upstreamFetchCount = 0;
   await withWorkerGlobals(
@@ -5651,6 +5712,34 @@ test("oversized legacy nodes remain readable but bypass node and playback hot ca
     })),
   });
   assert.equal(summary.lines.length, 32);
+});
+
+test("node resource limit checks stay per node record across oversized and normal nodes", async () => {
+  const oversizedNode = {
+    target: "https://origin.test",
+    lines: [{ id: "line-1", name: "Primary", target: "https://origin.test" }],
+    remark: "界".repeat(1400),
+  };
+  const normalNode = {
+    target: "https://origin.test",
+    lines: [{ id: "line-1", name: "Primary", target: "https://origin.test" }],
+    remark: "small",
+  };
+  const { kv } = createInMemoryKvStore({
+    [`${kernel.PREFIX}alpha`]: oversizedNode,
+    [`${kernel.PREFIX}beta`]: normalNode,
+  });
+  const state = getNodeBindingCacheState(kv);
+  const env = { ENI_KV: kv };
+  const ctx = { waitUntil() {} };
+
+  await kernel.getNode("alpha", env, ctx);
+  assert.equal(state.NodeCache.has("alpha"), false);
+
+  const beta = await kernel.getNode("beta", env, ctx);
+  assert.equal(beta.remark, "small");
+  assert.equal(state.NodeCache.has("beta"), true);
+  assert.equal(state.NodeCache.get("beta").data, beta);
 });
 
 test("node revision read failures are retried instead of negative-cached", async () => {
@@ -7613,6 +7702,69 @@ test("PlaybackInfo body inspection falls back to a bounded default when maxBytes
   );
   assert.equal(oversized.kind, "invalid");
   assert.equal(oversized.reason, "body_too_large");
+});
+
+test("PlaybackInfo cache size gate measures the body instead of trusting declared bytes", () => {
+  const store = new PlaybackInfoCacheStore({
+    entries: new Map(),
+    now: () => 1_000,
+    maxEntries: 8,
+    maxEntryBytes: 1_024,
+    maxTotalBytes: 8_192,
+  });
+  const bodyText = "x".repeat(1_025);
+  const lyingRepresentation = createPlaybackInfoRepresentation({
+    response: new Response(bodyText, { headers: { "Content-Type": "application/json" } }),
+    bodyText,
+    bodyBytes: 1,
+    payload: { MediaSources: [] },
+  });
+  assert.ok(lyingRepresentation);
+  assert.equal(store.set("playback-info:lying", lyingRepresentation, { ttlMs: 60_000 }), false);
+  assert.equal(store.entries.size, 0);
+});
+
+test("PlaybackInfo cache hits reuse the stored payload instead of re-parsing the body", async () => {
+  let now = 1_000;
+  const entries = new Map();
+  const store = new PlaybackInfoCacheStore({
+    entries,
+    now: () => now,
+    maxEntries: 8,
+    maxEntryBytes: 256 * 1024,
+    maxTotalBytes: 512 * 1024,
+  });
+  const bodyText = JSON.stringify({ MediaSources: [{ Id: "source-1" }] });
+  const inspected = await inspectPlaybackInfoResponse(
+    new Response(bodyText, { headers: { "Content-Type": "application/json" } }),
+  );
+  assert.equal(inspected.kind, "valid");
+  assert.equal(store.set("playback-info:hit", inspected.representation, { ttlMs: 60_000 }), true);
+  assert.equal(entries.get("playback-info:hit").payload, inspected.representation.payload);
+
+  const originalParse = JSON.parse;
+  JSON.parse = () => {
+    throw new Error("PlaybackInfo cache hits must not re-parse the cached body");
+  };
+  let hit = null;
+  try {
+    hit = store.get("playback-info:hit");
+  } finally {
+    JSON.parse = originalParse;
+  }
+  assert.ok(hit, "cache hit must be served");
+  assert.equal(hit.representation.payload, inspected.representation.payload);
+  assert.equal(hit.representation.bodyText, bodyText);
+  assert.equal(hit.representation.bodyBytes, Buffer.byteLength(bodyText));
+  assert.equal(
+    hit.representation.response.headers.get("Content-Type"),
+    "application/json; charset=utf-8",
+  );
+  assert.equal(await hit.representation.response.text(), bodyText);
+
+  now += 60_001;
+  assert.equal(store.get("playback-info:hit"), null);
+  assert.equal(entries.size, 0);
 });
 
 test("PlaybackInfo passthrough decodes nested object fields and removes invalid entries", async () => {

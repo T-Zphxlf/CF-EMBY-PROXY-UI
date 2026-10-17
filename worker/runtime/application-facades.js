@@ -2424,7 +2424,12 @@ function sanitizeProxyPath(path) {
 }
 function isEmbyWebProxyPath(proxyPath = "") {
   let decodedPath = sanitizeProxyPath(proxyPath);
-  while (true) {
+  // 政策边界（不是实现细节）：/web 子树最多还原 4 层百分号编码。
+  // 设上界的原因：无界逐层剥离 %25 是 O(n²)，深层编码的 URL 可在鉴权前放大 CPU。
+  // 1-4 层编码仍识别为 web 子树并拒绝代理；≥5 层按普通代理路径处理。这与源站一致：
+  // Emby 自身也只做有限次 URL 解码，≥5 层编码在上游同样不会路由到 /web。
+  // 改动此上界需同步安全评审与 tests 中标注 "policy:" 的边界用例，不要顺手改小或去掉。
+  for (let pass = 0; pass < 4 && decodedPath.includes("%"); pass += 1) {
     const nextPath = decodedPath.replace(/%([0-9a-f]{2})/gi, (encodedByte, hex) => {
       const byteValue = Number.parseInt(hex, 16);
       return byteValue <= 127 ? String.fromCharCode(byteValue) : encodedByte;
@@ -15464,8 +15469,9 @@ function resetNodeCacheTokens(state = nodeBindingCacheStates.current()) {
   state.NodeCacheResetGeneration += 1;
   state.NodeCacheGenerations.clear();
 }
+var utf8ByteLengthEncoder = new TextEncoder();
 function getUtf8ByteLength(value) {
-  return new TextEncoder().encode(String(value ?? "")).byteLength;
+  return utf8ByteLengthEncoder.encode(String(value ?? "")).byteLength;
 }
 function createD1SerializedValueTooLargeError(field, value, options = {}) {
   const actualBytes = getUtf8ByteLength(value);
@@ -15491,7 +15497,21 @@ function assertD1SerializedValueFits(field, value, options = {}) {
     throw createD1SerializedValueTooLargeError(field, value, options);
   return value;
 }
+var nodeResourceLimitViolationMemo = new WeakMap();
 function getNodeResourceLimitViolation(nodeName, nodeData = {}) {
+  const name = String(nodeName || "")
+    .trim()
+    .toLowerCase();
+  const cacheable = nodeData !== null && typeof nodeData === "object";
+  if (cacheable) {
+    const cached = nodeResourceLimitViolationMemo.get(nodeData);
+    if (cached && cached.name === name) return cached.violation;
+  }
+  const violation = computeNodeResourceLimitViolation(nodeName, nodeData);
+  if (cacheable) nodeResourceLimitViolationMemo.set(nodeData, { name, violation });
+  return violation;
+}
+function computeNodeResourceLimitViolation(nodeName, nodeData = {}) {
   const name = String(nodeName || "")
     .trim()
     .toLowerCase();
@@ -16868,7 +16888,18 @@ function normalizeWorkerCacheUrl(url) {
   for (const [key, value] of keptParams) normalizedUrl.searchParams.append(key, value);
   return normalizedUrl;
 }
+var workerMetadataCacheIdentityMemo = new WeakMap();
 function collectWorkerMetadataCacheIdentity(request) {
+  const cacheable = request !== null && typeof request === "object";
+  if (cacheable) {
+    const cached = workerMetadataCacheIdentityMemo.get(request);
+    if (cached) return cached;
+  }
+  const identity = computeWorkerMetadataCacheIdentity(request);
+  if (cacheable) workerMetadataCacheIdentityMemo.set(request, identity);
+  return identity;
+}
+function computeWorkerMetadataCacheIdentity(request) {
   const requestUrl =
     request instanceof Request ? new URL(request.url) : new URL(String(request || ""));
   const queryEntries = [];
@@ -25011,6 +25042,12 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
         return;
       if (!(response.status >= 200 && response.status < 300)) return;
       if (!isJsonHttpMediaType(response.headers.get("Content-Type"))) return;
+      // 默认 poster 深度只对 /Items/{id} 生成预热目标；其余路径 clone + JSON.parse 整个响应是纯开销
+      if (
+        requestTraits.prewarmDepth === "poster" &&
+        !extractProxyItemId(String(options.proxyPath || ""))
+      )
+        return;
       let responseClone;
       try {
         responseClone = response.clone();
