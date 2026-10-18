@@ -70,7 +70,7 @@ node --test tests/*.test.mjs
 ## 4. 测试覆盖范围
 
 - `tests/worker-defensive-boundaries.test.mjs`：代理路由、缓存身份、PlaybackInfo、HTML shell、failover、请求边界、并发和安全响应。
-- `tests/config-kv-safety.test.mjs`：KV 写入回滚、revision、快照脱敏、导入、HTML 激活和整理计划。
+- `tests/config-kv-safety.test.mjs`：KV 写入回滚、revision、遗留设置快照清理、密钥脱敏、导入、HTML 激活和整理计划。
 - `tests/d1-schema.test.mjs`：当前 D1 schema 初始化、兼容检查、索引和整理。
 - `tests/frontend-runtime-enhancements.test.mjs`：管理端增强脚本、设置保存、仪表盘、DNS、备份、CDN 资源和开发服务器约束。
 - `tests/worker-bundle-smoke.test.mjs`：生成 Worker bundle 的入口和 Cloudflare handler 形状。

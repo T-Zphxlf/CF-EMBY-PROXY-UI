@@ -29,7 +29,7 @@ flowchart TD
   Redirect --> Playback["播放关键路径 · PlaybackInfo 改写 / manifest / segment / 有界缓存"]
   Playback --> Client
 
-  Admin --> KV["KV ENI_KV · sys:theme / node:* / 快照 / HTML"]
+  Admin --> KV["KV ENI_KV · sys:theme / node:* / HTML"]
   Proxy --> KV
   Admin --> D1["D1 DB · proxy_logs / stats / sys_status / 锁 / 认证失败"]
   Proxy --> D1
@@ -47,11 +47,14 @@ flowchart TD
 - `worker/index.js` 只调用 `createWorkerApplication()` 并默认导出 `workerHandler`。
 - `worker/runtime/application-facades.js` 是当前组合模块。它使用 `//#region` 保留按功能域组织的实现，并在末尾组装 `AdminConsoleFacade`、`NodeProxyFacade`、`ScheduledMaintenanceFacade`。
 - `createWorkerApplication()` 创建 kernel、缓存管理器、日志器、管理端 shell、代理 workflow 和定时维护服务，然后返回冻结的 handler。
-- `scripts/check-worker-architecture.mjs` 将 `application-facades.js` 作为当前已知的 facade 例外（基线中约 26091 行），同时检查依赖方向、单入口、无动态 import、无遗留通用 operation bag。
+- `scripts/check-worker-architecture.mjs` 将 `application-facades.js` 作为当前已知的 facade 例外，同时检查依赖方向、单入口、无动态 import、无遗留通用 operation bag。检查器不限制 facade 的总行数，真正的预算是每个 `//#region` 不超过 1800 行（`facadeRegionMaxLines`）；非 facade 模块另有 1500 行上限（`defaultModuleMaxLines`）。
 
 ### 可独立阅读的目录
 
-- `worker/core/`：错误、常量、HTTP body、哈希、原语、运行时全局对象等低层能力。
+- `worker/core/`：`http-body`（有界请求/响应体）、`bounded-json`、`hashing`、`primitives`、`binding-state` / `runtime-binding-state`、`runtime-globals`、`build-info`。注意 `worker/` 下只有 20 个 `.js` 文件，错误码、HTTP 常量、配置 schema 等多数实现是 facade 内的 region，不是独立文件。
+- `worker/runtime/admin/action-registry.js`：管理端 action 注册表与分组。
+- `worker/runtime/maintenance/mutation-queues.js`：KV/D1 变更队列与并发保护。
+- `worker/runtime/observability/log-binding-state.js`：日志 binding 的 isolate 级状态。
 - `worker/runtime/proxy/http/`：HTTP MIME 类型、API MIME 守卫、代理错误响应。
 - `worker/runtime/proxy/playback/`：PlaybackInfo 合约、重写和有界缓存。
 - `worker/testing/hooks.js`：仅测试支持；生产模块不能依赖它。
@@ -64,7 +67,7 @@ flowchart TD
 `createWorkerApplication()` 的 `fetch` 处理顺序如下：
 
 1. 构建一次 route context：规范化 host、路径、admin path、segments，并读取初始化健康状态。
-2. 如果启用 `EnableHostPrefixProxy` 且请求 host 是配置 host 的子域，优先进入 host-prefix 节点代理。
+2. 如果启用 `enableHostPrefixProxy` 且请求 host 是配置 host 的子域，优先进入 host-prefix 节点代理。
 3. 对 `/`、`/favicon.ico`、`ADMIN_PATH`、`ADMIN_PATH/login`、管理端 vendor 路径和 POST 管理动作，交给 `AdminConsoleFacade`。
 4. 其余请求交给 `NodeProxyFacade`。它按 host-prefix、兼容路径、普通 `/<node>/...` 路由解析节点，再调用 proxy workflow。
 5. 代理 workflow 负责节点读取、访问策略、failover/探测、上游请求、流式响应、重定向映射、metadata cache、PlaybackInfo 改写和访问日志。
@@ -106,6 +109,8 @@ frontend/admin-runtime.template.html
 
 部署时 Wrangler 将 `frontend/dist` 与 Worker 一起上传。已上传到 KV 或显式配置的管理端 HTML 保持最高优先级；未配置时，Worker 从 `ASSETS` 读取 `/index.html`，完成 HTML 校验和 bootstrap 注入后直接返回，因此新部署无需先手动上传前端。
 
+所有管理端 HTML 入口（`ASSETS`、远端 URL、KV 上传记录）都经过同一个 `validateAdminShellHtmlSource`：限制 2 MiB、校验 content-type、必须含 `#app` 根节点、必须含 runtime enhancements（`<style>` 与 `<script>` 各带 `data-admin-runtime-enhancements="1"`）、且外链资源必须符合发布策略。缺少 enhancement 层的旧版壳会被拒绝，而不是静默降级丢掉皮肤、并发保存保护和探针并发池。
+
 `frontend/src/` 的 Vue SFC、composable 和 feature 目录仍被源码语法/行为检查覆盖，并可作为组件化实现参考；但只修改这些文件不会自动改变当前生产 HTML。涉及 UI 的改动先确认是在模板链还是 Vue 源码链上生效。
 
 ## 5. 存储边界
@@ -136,7 +141,7 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 
 ## 8. 设置项与绑定/键映射
 
-管理端“设置页”维护的所有全局配置只有两个可能落点：写配置时进 KV `ENI_KV` 的 `sys:theme`（单个 JSON 文档，`saveConfig` / `importSettings` 都会先记一份 `sys:config_snapshots:v1` 快照），节点级字段进 `node:{name}`。D1 不保存或投影设置，只保存运行时数据，所以下表的“绑定/键”列对全局行都是同一份 `sys:theme`，差异体现在生效链路和被它驱动的 D1 表上。
+管理端“设置页”维护的所有全局配置只有两个可能落点：写配置时进 KV `ENI_KV` 的 `sys:theme`（单个 JSON 文档，版本元数据写在 `sys:config_meta:v1`），节点级字段进 `node:{name}`。设置变更不保留历史：旧版的 `sys:config_snapshots:v1` / `sys:config_snapshots_meta:v1` 已是遗留键，保存配置与 KV 整理都会删除它们，回退只能依赖此前导出的备份文件。D1 不保存或投影设置，只保存运行时数据，所以下表的“绑定/键”列对全局行都是同一份 `sys:theme`，差异体现在生效链路和被它驱动的 D1 表上。
 
 | 设置分区 | 代表字段（`sys:theme` 键名） | 绑定 / 键 | 生效链路 |
 | --- | --- | --- | --- |
@@ -147,8 +152,8 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 | 日志设置 | `logEnabled`、`logSearchMode`、`logWrite*`、`logDisplay*`、`logRetentionDays`、`logWriteDelayMinutes`、`logFlushCountThreshold`、`logBatch*`、`scheduledLeaseMs` | KV `ENI_KV` → `sys:theme` | 写 D1 `proxy_logs` / 定时清理 |
 | 监控告警 | `tgBotToken`、`tgChatId`、`tgAlert*`、`tgDailyReport*`、`scheduleUtcOffsetMinutes`、`cfQuotaPlan*` | KV `ENI_KV` → `sys:theme` | 定时任务 / Telegram |
 | 账号设置 | `jwtExpiryDays`、`cfAccountId`、`cfZoneId`、`cfApiToken`、`cfKvNamespaceId`、`cfD1DatabaseId`、`tmdb*`、`indexUrl` | KV `ENI_KV` → `sys:theme` | 登录态 / Cloudflare API |
-| 备份与恢复 | 无设置字段 | KV `sys:config_snapshots:v1`、`sys:config_meta:v1`；节点 `node:*` + `sys:nodes_index:v1` | `export*` / `import*` / `restore*` action |
+| 备份与恢复 | 无设置字段 | KV `sys:theme` + `sys:config_meta:v1`；节点 `node:*` + `sys:nodes_index:v1` | `exportConfig` / `exportSettings` / `importFull` / `importSettings` action；不保留设置变更历史 |
 
 节点级字段写入 `node:{name}`、不进 `sys:theme`：`nodeName`、`entryMode`、`secret`、`orderedTargets`、`headers`、`tags`、`remark`、`activeLineId`，以及可选的 `playbackInfoMode`、`mediaAuthMode`、`realClientIpMode`、`routingDecisionMode`、`mainVideoStreamMode`。索引 `sys:nodes_index:v1` 是列表/导入导出的读入口，缺失时可由 `node:*` 重建。
 
-敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key` 属于 `CONFIG_SECRET_FIELDS`：普通导出、运行时快照和日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。
+敏感字段 `cfApiToken`、`tgBotToken`、`tmdbApiReadToken`、`tmdbApiV3Key` 属于 `CONFIG_SECRET_FIELDS`：普通导出与日志都会脱敏，只有经过二次确认的“含密钥”导出才保留原值。

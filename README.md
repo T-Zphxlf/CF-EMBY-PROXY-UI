@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.7** 在原有新手 / 高手设置模式、配置快照和分区导航基础上，继续强化 Jellyfin 12 兼容与重定向安全：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全、`auto` 模式统一改写 `Emby` scheme、跨域重定向在鉴权不可携带时改为 fail-closed（返回 409 而非透传无鉴权 `Location`），并把 legacy `/emby` 兜底收敛到重定向映射；同时保留控制面 / 数据面分层、缓存键清洗、转码 `m3u8` 禁缓存、Geo 白/黑名单模式切换等优化。本轮同时做了一轮性能收敛：PlaybackInfo 缓存命中直接复用写入时解析的 payload，条目因此常驻解析对象（约 3–4× body，受 `maxTotalBytes` 约束）；`/web` 子树的百分号解码封顶 4 层，避免鉴权前的 O(n²) 开销；管理端 shell HTML 的标签扫描与内联 `import()` 搜索不再整篇 `toLowerCase()`，`exportConfig` 的备份载荷只序列化一次。
+> 当前 **V19.7** 在原有新手 / 高手设置模式与分区导航基础上，继续强化 Jellyfin 12 兼容与重定向安全：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全、`auto` 模式统一改写 `Emby` scheme、跨域重定向在鉴权不可携带时改为 fail-closed（返回 409 而非透传无鉴权 `Location`），并把 legacy `/emby` 兜底收敛到重定向映射；同时保留控制面 / 数据面分层、缓存键清洗、转码 `m3u8` 禁缓存、Geo 白/黑名单模式切换等优化。本轮同时做了一轮性能收敛：PlaybackInfo 缓存命中直接复用写入时解析的 payload，条目因此常驻解析对象（约 3–4× body，受 `maxTotalBytes` 约束）；`/web` 子树的百分号解码封顶 4 层，避免鉴权前的 O(n²) 开销；管理端 shell HTML 的标签扫描与内联 `import()` 搜索不再整篇 `toLowerCase()`，`exportConfig` 的备份载荷只序列化一次。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
@@ -34,7 +34,7 @@
 - [部署前须知](#部署前须知)
 - [环境变量与绑定](#环境变量与绑定)
 - [部署步骤](#部署步骤)
-- [自定义域绑定与优选域名路由教程](#自定义域绑定与优选域名路由教程)
+- [自定义域绑定与优选域名路由教程](#第八步自定义域绑定与优选域名路由教程)
 - [文档导航](#文档导航)
 - [后台功能说明](#后台功能说明)
 - [节点访问方式](#节点访问方式)
@@ -67,7 +67,7 @@
 ### 1) 可视化管理
 - 后台地址：`ADMIN_PATH`（默认 `/admin`）
 - 支持节点新增、编辑、删除、导入、导出
-- 支持全局 GET / 健康检查，批量探测固定最多 4 个并发请求
+- 支持全局 GET / 健康检查与节点面板一键 GET 探测（全局批量最多 4 个并发，节点弹窗内逐条执行并显示 `n/总数` 进度）
 - 支持仪表盘展示请求量、运行状态、流量趋势、资源分类徽章
 - 支持 DNS 编辑双模式：`CNAME模式` / `A模式` 可切换，保存时自动处理互斥关系
 - 支持推荐优选域名卡片、DNS 历史卡片回填，以及 DNS 实用链接快捷跳转
@@ -75,15 +75,15 @@
 - 支持冷启动初始化自检，缺少 `JWT_SECRET` / `ADMIN_PASS` 时直接在控制台与页面提示
 - 支持“一键整理 KV 数据”，用于修复旧版本升级后 `sys:theme` 脏值、`sys:nodes_index` 错乱与遗留缓存键
 - 支持预览后整理 KV / D1；D1 整理使用签名计划令牌与单轮硬预算，达到预算后可再次预览继续执行
-- 支持设置变更快照、全局设置专用迁移与完整备份
+- 支持全局设置专用迁移与完整备份（不保留设置变更历史，回退依赖此前导出的备份文件）
 - 节点保存和批量导入会校验 Worker 资源上限；超限导入整批拒绝，旧版超限节点仍可读取和代理但不进入热缓存或自动回写
 
 ### 2) 智能代理与分流
 - 默认由 Worker 透明中继请求与响应
 - 支持同源 30x 继续代理
 - 支持显式“源站直连节点”名单
-- 支持外链强制反代或直接下发 `Location`
-- 内置 `wangpandirect` 关键词匹配，可识别网盘 / 对象存储链接并直连
+- 跨域 30x 重定向按“鉴权能否随跳转携带”自动处理：可携带时由 Worker 继续代理，无法携带时 fail-closed 返回 409，不下发无鉴权的节点 `Location`
+- 节点级“主视频流策略”`mainVideoStreamMode`（直连 / 代理 / 跟随全局），决定网盘、对象存储等不适合中继的源站是否直接回到客户端
 
 ### 3) 媒体场景优化
 - 静态资源、封面、字幕与视频流分开处理
@@ -139,7 +139,7 @@ flowchart TD
   Redirect --> Playback["播放关键路径 · PlaybackInfo 改写 / manifest / segment / 有界缓存"]
   Playback --> Client
 
-  Admin --> KV["KV ENI_KV · sys:theme / node:* / 快照 / HTML"]
+  Admin --> KV["KV ENI_KV · sys:theme / node:* / HTML"]
   Proxy --> KV
   Admin --> D1["D1 DB · proxy_logs / stats / sys_status / 锁 / 认证失败"]
   Proxy --> D1
@@ -158,16 +158,16 @@ flowchart TD
 |---|---|
 | 后台认证 | JWT 登录态；绑定 D1 时启用按 IP 的密码错误累计锁定 |
 | 节点管理 | 节点增删改查、导入导出、备注/标签/密钥、4 并发 GET 健康探测、资源上限校验 |
-| 路由模式 | 透明反代、同源跳转继续代理、源站直连节点 |
-| 外链策略 | 强制反代外部链接 / 直接下发 Location |
-| 网盘直连 | `wangpandirect` 关键词模糊匹配 |
+| 路由模式 | 透明反代、同源 30x 继续代理、源站直连节点 |
+| 外链策略 | 跨域 30x 鉴权可携带时继续代理，不可携带时 fail-closed 返回 409 |
+| 主视频流 | 节点级 `mainVideoStreamMode`：直连 / 代理 / 跟随全局 |
 | 缓存 | 静态资源缓存、视频透传、字幕边缘缓存、预热微缓存 |
 | 安全 | Geo 白名单/黑名单模式、IP 黑名单、单 IP 限速、真实客户端 IP 透传模式 |
 | 兼容补丁 | `Authorization` / `X-Emby-Authorization` / `X-MediaBrowser-Authorization` 兼容 |
-| 协议优化 | H1/H2/H3 开关、晚高峰自动降级、403 重试 |
+| 协议优化 | 协议策略档位（`compat` / `balanced` / `aggressive`；`balanced` 在 UTC+8 20:00–24:00 降级到 HTTP/1.1）、403 重试与协议回退 |
 | 日志监控 | D1 请求日志、签名预览与预算整理、Telegram 日报 |
 | 仪表盘 | Cloudflare GraphQL 聚合 + D1 本地兜底 |
-| 设置中心 | 新手/高手模式、分区导航、设置快照、专用迁移 |
+| 设置中心 | 新手/高手模式、分区导航、专用迁移 |
 | 连接能力 | HTTP(S) + WebSocket |
 
 ---
@@ -241,7 +241,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 
 | 变量名 / 绑定名称 | 类型 | 作用说明 | 配置示例 / 建议 |
 | :--- | :--- | :--- | :--- |
-| **`ENI_KV`** | KV 绑定 | **核心配置存储**。用于持久化保存项目主配置、节点信息、配置快照和 DNS 修改历史等。 | 绑定你创建的 KV 命名空间（例如：`EMBY_DATA`）。 |
+| **`ENI_KV`** | KV 绑定 | **核心配置存储**。用于持久化保存项目主配置、节点信息、DNS 修改历史与整理元数据等。 | 绑定你创建的 KV 命名空间（例如：`EMBY_DATA`）。 |
 | **`ADMIN_PASS`** | 加密变量 (Secret) | **后台登录密码**。用于验证管理面板的访问权限。 | `MyStrongPassword123` |
 | **`JWT_SECRET`** | 加密变量 (Secret) | **安全会话密钥**。用于生成和校验后台登录状态 (JWT)，防止越权访问。 | 建议填入一段高强度的随机长字符串。 |
 
@@ -255,6 +255,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 | **`ADMIN_PATH`** | 文本变量 (Var) | **自定义管理入口**。用于修改默认的 `/admin` 路径，有效防范自动化扫描工具的嗅探。 | `/secret_portal_99`<br>\> ⚠️ **注意**：不能以 `/api` 开头。 |
 | **`HOST`** | 文本变量 (Var) | **主访问域名**。启用 host prefix 代理或保存 host prefix 节点前必须配置；只填写合法 DNS 主机名。 | `emby.example.com`，不要带协议、端口、路径、通配符或 IP。 |
 | **`LEGACY_HOST`** | 文本变量 (Var) | **兼容旧访问域名**。迁移主域名时保留旧的路径式节点入口。 | `old-emby.example.com` |
+| **`TMDB_API_READ_TOKEN`** / **`TMDB_API_KEY`** / **`TMDB_LANGUAGE`** | 加密变量 / 文本变量 | **TMDB 聚合兜底**。仅当后台「账号设置」里的 TMDB 凭据为空时才使用；两项凭据都在后台填写后，环境变量会被整组忽略。 | 见 `.dev.vars.example` |
 
 > 💡 **命名兼容性提示**：
 > 核心代码已向下兼容多种旧版命名（如 `KV` / `EMBY_KV` / `EMBY_PROXY` 会自动映射为 `ENI_KV`，`D1` / `PROXY_LOGS` 会映射为 `DB`）。但**强烈建议在新部署时统一使用 `ENI_KV` 和 `DB`**，以确保与后续的更新、README 说明及自动化脚本保持一致。
@@ -263,7 +264,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
 
 ### 二、 SaaS 面板进阶配置（后台 UI 填写）
 
-项目部署成功并登录管理后台后，可在\*\*“全局设置”\*\*中配置以下进阶参数。这些参数经后端清洗后以 JSON 写入 `ENI_KV` 的 `sys:theme`；`cfApiToken`、`tgBotToken` 不会写入配置快照，普通备份导出也会默认移除它们，只有经过二次确认的“含密钥”导出才会包含。主配置本身不是静态加密密文，请严格限制 KV 和管理后台的访问权限。
+项目部署成功并登录管理后台后，可在\*\*“全局设置”\*\*中配置以下进阶参数。这些参数经后端清洗后以 JSON 写入 `ENI_KV` 的 `sys:theme`；`cfApiToken`、`tgBotToken` 不会出现在普通备份导出中，只有经过二次确认的“含密钥”导出才会包含它们。主配置本身不是静态加密密文，请严格限制 KV 和管理后台的访问权限。
 
 | 参数分类 | 参数名 | 作用说明 |
 | :--: | :--- | :--- |
@@ -473,7 +474,7 @@ Worker选择：Worker 一栏选择你第一步创建的那个Worker
 
 ### 第九步：Cloudflare Cache Rules 教程[违反TOS慎重开启]
 
-- [Cloudflare Cache Rules 教程](#Cloudflare Cache Rules 教程) 
+- [Cloudflare Cache Rules 教程](#5-cloudflare-cache-rules-教程)
 【多人共享可选】【如果无法点击就直接ctrl+f 搜索吧】
 
 
@@ -522,18 +523,24 @@ https://你的域名/secret_portal_99
 
 ### 设置页中可直接配置的能力
 
-> 默认进入 **新手模式**，主要展示系统 UI、日志设置、监控告警、账号设置、备份与恢复。切换到 **高手模式** 后，才会展开代理与网络、静态资源策略、安全防护，以及更细的日志调优 / KV 修复工具。
+> 默认进入 **新手模式**，设置页只隐藏「代理与网络」和「安全防护」两栏，其余分区（含静态资源策略）都会显示。切换到 **高手模式** 后才会出现这两栏，并展开更细的日志调优 / KV 修复工具与高级字段。
 
 #### 系统 UI
 - 新手模式 / 高手模式切换
 - UI 圆角弧度
 - 本地深浅主题切换（仅浏览器本地保存）
-- 纯净面板风格
+- 界面主题：经典蓝 / 暖纸（仅浏览器本地保存）
+- 调度时区偏移（用于定时任务与日报时间口径）
+- 多链接复制面板开关
+- 仪表盘「D1 写入热点」卡片开关
+- 仪表盘「KV / D1 状态」卡片开关
+- Cloudflare 套餐展示覆盖（用于配额口径）
 
 #### 代理与网络（高手模式完整显示）
-- HTTP/2 开关
-- HTTP/3 QUIC 开关
-- 晚高峰自动降级到 HTTP/1.1
+- 协议策略档位（`compat` 兼容优先 / `balanced` 均衡优先 / `aggressive` 激进优先）
+  - `compat`：关闭 HTTP/2、HTTP/3，全程走 HTTP/1.1
+  - `balanced`：启用 HTTP/2、HTTP/3，但在 UTC+8 的 20:00–24:00 晚高峰降级到 HTTP/1.1
+  - `aggressive`：全程启用 HTTP/2、HTTP/3，不做晚高峰降级
 - 403 重试与协议回退
 - host prefix 代理开关（启用前必须配置 `HOST`、Cloudflare Zone ID 与 API Token）
 - 轻量级元数据预热
@@ -543,9 +550,9 @@ https://你的域名/secret_portal_99
 - 静态文件直连
 - HLS / DASH 直连
 - HLS / DASH 直连命中时，播放列表与分片自动走 307 数据面直传
-- 同源跳转代理
-- 强制反代外部链接
-- `wangpandirect` 模糊关键词
+- PlaybackInfo 缓存开关与缓存时长（0–60 秒）
+- 视频回传进度开关与上报间隔
+- 故障转移探测（`hedge*` 组：探测路径、超时、并行度、等待时长、锁 TTL、偏好 TTL、失败冷却、抖动）
 - 源站直连节点名单
 - Ping 超时时间
 - Ping 缓存时间
@@ -565,6 +572,10 @@ https://你的域名/secret_portal_99
 - 全局单 IP 限速（请求/分钟）
 
 #### 日志设置
+- 日志开关与写入模式（`info` 记录全部请求 / `error` 只记录失败）
+- 写入字段：客户端 IP / COLO / UA、图片海报、媒体元数据
+- 展示字段：客户端 IP / COLO / UA
+- 日志搜索模式（LIKE / FTS5）
 - 日志保存天数
 - 日志延迟写入分钟数
 - 队列提前落盘阈值
@@ -581,6 +592,8 @@ https://你的域名/secret_portal_99
 - D1 写入重试告警阈值
 - 定时任务 `failed / partial_failure` 告警
 - 告警冷却时间
+- 定时日报开关、汇总口径开关、KV 口径开关、D1 口径开关与发送时间队列
+- KV / D1 用量告警开关与阈值百分比
 - 测试通知
 - 手动发送日报
 
@@ -591,8 +604,7 @@ https://你的域名/secret_portal_99
 - 当前设置页中的 Telegram Bot Token、Telegram Chat ID、Cloudflare API Token 为直接显示，不再做密码框隐藏或预览脱敏
 
 #### 备份与恢复
-- 设置变更快照列表与恢复（最多保留最近 5 个）
-- 恢复快照前会先自动记录当前配置，方便回退
+- 不保留设置变更历史：旧版的设置快照已下线，恢复只能使用此前导出的设置 / 完整备份文件
 - 导入全局设置 / 导出全局设置（仅 settings，不含节点）
 - 全局设置专用迁移在导入时会整体替换当前 settings，未包含字段回退为默认值
 - 导入完整备份 / 导出完整备份（节点 + 全局设置）
@@ -609,7 +621,7 @@ https://你的域名/secret_portal_99
 - 额外重试轮次：最高 3 次，避免额外消耗 Worker 子请求预算；Cloudflare 官方限制每次请求的子请求数量存在平台上限，免费计划与付费计划的额度不同。
 - D1 单批写入切片大小：最高 100 条，避免单批过大。
 - 定时任务租约时长：30000 到 900000 毫秒；对应 Cloudflare Cron 单次最长 15 分钟的官方限制。
-- 设置变更快照：系统最多保留最近 5 个；恢复前会先自动记录当前配置。
+- 设置变更历史：不保留。`sys:config_snapshots:v1` 是旧版遗留键，保存设置与 KV 整理都会删除它，回退只能依赖导出的备份文件。
 - 全局设置专用迁移：导入时会整体替换当前 settings，适合多环境同步；旧字段会先做兼容清洗，再按当前字段模型落盘。
 
 ---
@@ -724,7 +736,7 @@ https://你的域名/hk/123
 - 如果你的站点路径前缀不是 `/emby/videos/`，请按实际路径改表达式。
 
 ### 6. 直连与省流
-通过 `wangpandirect` 与“源站直连节点”，可以让不适合 Worker 中继的数据直接回到客户端，避免无意义的带宽绕行。
+通过节点级“主视频流策略”（`mainVideoStreamMode`，直连 / 代理 / 跟随全局）与“源站直连节点”名单，可以让不适合 Worker 中继的数据直接回到客户端，避免无意义的带宽绕行。跨域 30x 重定向则由鉴权能否随跳转携带自动决定是否继续代理。
 
 ---
 
@@ -740,6 +752,7 @@ https://你的域名/hk/123
 
 ### 敏感操作二次确认
 - DNS 修改 API 需要显式携带 `X-Admin-Confirm: saveDnsRecords`；兼容单条更新时仍可使用 `X-Admin-Confirm: updateDnsRecord`
+- 同样需要 `X-Admin-Confirm` 的还有：`purgeCache`（清理 Cloudflare 缓存）、`exportConfig` / `exportSettings`（含密钥导出）、`clearLogs`（清理日志）、`repairD1Schema`（修复 D1 Schema）
 - 管理面板已自动补这个请求头；如果你自己写脚本调用管理 API，也要一并带上
 
 ### 访问控制
@@ -804,10 +817,10 @@ https://你的域名/hk/123
 | `node:{name}` | 节点实体配置 | 单个节点的地址、密钥、标签、线路、排序等信息；代理请求会按 URL 中的节点名直接读取这里 |
 | `sys:nodes_index:v1` | 节点索引 | 节点列表页、导入导出和搜索时优先读取；缺失时可根据 `node:*` 自动重建 |
 | `sys:theme` | 全局配置 | 后台“全局设置”保存后的主配置，包含日志、监控、Cloudflare 联动、Telegram 等参数 |
-| `sys:config_snapshots:v1` | 设置快照 | 保存最近几次设置变更前的旧配置，用于“恢复此快照”和回退 |
+| `sys:config_meta:v1` | 设置版本元数据 | 记录当前 `sys:theme` 的 hash 与 revision，保存时用于并发冲突检测 |
 | `sys:dns_record_history:v1:{zoneId}:host:{hostname}` | DNS 修改历史 | 记录当前站点最近的 `CNAME` 修改值，供后台 DNS 历史卡片回填 |
 
-> `sys:ops_status:*`、`sys:cf_dash_cache*`、`sys:scheduled_lock:v1`、`sys:telegram_alert_state:v1` 和 `fail:*` 都是旧版 KV 键。当前对应数据分别存放在 D1 的 `sys_status`、`cf_dashboard_cache`、`sys_locks` 和 `auth_failures` 中；KV 整理会删除检测到的这些遗留键。
+> `sys:ops_status:*`、`sys:cf_dash_cache*`、`sys:scheduled_lock:v1`、`sys:telegram_alert_state:v1`、`sys:config_snapshots:v1`、`sys:config_snapshots_meta:v1` 和 `fail:*` 都是旧版 KV 键。当前对应数据分别存放在 D1 的 `sys_status`、`cf_dashboard_cache`、`sys_locks` 和 `auth_failures` 中，设置快照本身已不再写入；KV 整理和保存设置都会删除检测到的这些遗留键。
 
 > 如果升级后出现“全局设置读取失败 / 设置页空白 / 节点索引丢失但 `node:*` 还在”的情况，可在后台的“账号与备份”区域使用 **一键整理 KV 数据**：
 > 1. 遍历 KV 并保留所有 `node:*`
@@ -819,11 +832,8 @@ https://你的域名/hk/123
 
 | action | 读 / 写 KV | 主要用途 | 备注 |
 |---|---|---|---|
-| `saveConfig` | 写 | 保存全局设置到 `sys:theme` | 保存前会自动记录配置快照 |
-| `importSettings` | 写 | 导入 settings-only 备份到 `sys:theme` | 会按当前版本规则清洗配置，并记录快照 |
-| `getConfigSnapshots` | 读 | 读取 `sys:config_snapshots:v1` | 用于展示设置变更快照列表 |
-| `clearConfigSnapshots` | 删 | 清空设置快照 | 仅删除快照，不影响当前生效配置 |
-| `restoreConfigSnapshot` | 读 + 写 | 从快照恢复全局设置 | 恢复前会先记录当前配置，方便二次回退 |
+| `saveConfig` | 写 | 保存全局设置到 `sys:theme` | 同时写 `sys:config_meta:v1`，并删除遗留的 `sys:config_snapshots:v1` |
+| `importSettings` | 写 | 导入 settings-only 备份到 `sys:theme` | 会按当前版本规则清洗配置；不生成快照 |
 | `save` / `import` | 写 | 新增或批量导入节点 | 最终会写入 `node:*`，并同步更新 `sys:nodes_index:v1` |
 | `delete` | 删 | 删除节点 | 会删除对应 `node:*`，并重建节点索引 |
 | `exportSettings` / `exportConfig` | 读 | 导出全局设置或完整备份 | 数据来源就是当前 KV 中的配置与节点 |
@@ -840,10 +850,9 @@ https://你的域名/hk/123
 | 页面位置 | 入口 / 按钮 | 对应 action / 接口 | 作用说明 |
 |---|---|---|---|
 | `节点管理` | 保存节点 / 导入节点 / 删除节点 | `save` / `import` / `delete` | 节点实体最终都写入 `node:*`，并同步维护节点索引 |
-| `设置 -> 任意设置分区` | 保存设置 | `saveConfig` | 将当前设置保存到 `sys:theme`，并生成快照 |
+| `设置 -> 任意设置分区` | 保存设置 | `saveConfig` | 将当前设置保存到 `sys:theme` |
 | `设置 -> 备份与恢复` | 导出全局设置 / 导出完整备份 | `exportSettings` / `exportConfig` | 从 KV 读取当前配置和节点，导出为 JSON |
 | `设置 -> 备份与恢复` | 导入全局设置 / 导入完整备份 | `importSettings` / `importFull` | 把 JSON 内容重新写回 KV |
-| `设置 -> 备份与恢复` | 恢复此快照 / 清理快照 | `restoreConfigSnapshot` / `clearConfigSnapshots` | 管理 `sys:config_snapshots:v1` 中的设置快照 |
 | `设置 -> 备份与恢复`（高手模式） | `一键整理 KV 数据` | `tidyKvData` | 修复旧版本升级后的索引、脏配置和遗留缓存键问题 |
 | `设置 -> 备份与恢复`（高手模式） | `一键整理 D1 数据` | `tidyD1Data` | 先通过 `previewTidyData` 获取签名计划，再按硬预算清理日志、统计、缓存和过期状态 |
 | `DNS 编辑` | 刷新 / 保存 DNS | `listDnsRecords` / `saveDnsRecords` | 按当前站点整体同步 `CNAME` 或 `A / AAAA` 草稿，并维护 CNAME 历史 |
@@ -912,7 +921,7 @@ https://你的域名/hk/123
 ```mermaid
 flowchart TD
   Start("用户请求到达 Worker") --> Ctx["构建 route context：host / path / ADMIN_PATH / 初始化健康"]
-  Ctx --> HP{"EnableHostPrefixProxy 且 host 是配置 host 的子域?"}
+  Ctx --> HP{"enableHostPrefixProxy 且 host 是配置 host 的子域?"}
   HP -- 是 --> Proxy["NodeProxyFacade 节点代理"]
   Ctx --> Admin{"管理端路由?"}
 
@@ -973,7 +982,7 @@ flowchart TD
 
 1. 节点路径写错
 2. 节点设置了密钥，但访问 URL 没带密钥
-3. `ENI_KV` 没绑定，导致读取不到节点配置
+3. `ENI_KV` 没绑定：管理 API 会返回 `503 KV_NOT_CONFIGURED`，节点路由返回 404
 4. 命中了国家/地区或 IP 防火墙
 5. 单 IP 限速已触发
 
@@ -987,8 +996,8 @@ flowchart TD
 这通常是以下原因之一：
 
 - 节点被加入“源站直连名单”
-- 外链强制反代关闭
-- 命中了 `wangpandirect` 关键词
+- 节点的主视频流策略设为直连（`mainVideoStreamMode: direct`）
+- 上游返回跨域重定向且鉴权无法随跳转携带时，Worker 会 fail-closed 返回 409（此时拿不到 30x，而不是直连）
 - 上游返回的是外部存储地址
 
 ### 4. 为什么仪表盘没有 Cloudflare 统计？
