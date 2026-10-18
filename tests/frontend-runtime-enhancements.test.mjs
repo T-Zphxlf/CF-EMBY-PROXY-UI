@@ -4,6 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 import {
+  findAdminModuleScriptTags,
   inspectRuntimeAssets,
   isForbiddenRuntimeAsset,
 } from "../frontend/scripts/check-cdn-paths.mjs";
@@ -1602,4 +1603,27 @@ test("CDN checker rejects relative and forbidden release assets", () => {
     isForbiddenRuntimeAsset("https://cdn.jsdelivr.net/npm/vue@3.5.32/dist/vue.global.prod.js"),
     false,
   );
+});
+
+test("frozen frontend/src mirror rejects a module script admin entry", () => {
+  assert.equal(findAdminModuleScriptTags('<script type="module">boot()</script>').length, 1);
+  assert.equal(findAdminModuleScriptTags("<script type=module>boot()</script>").length, 1);
+  assert.equal(findAdminModuleScriptTags("<script type='MODULE'>boot()</script>").length, 1);
+  assert.equal(
+    findAdminModuleScriptTags('<script type="application/json">{"type":"module"}</script>').length,
+    0,
+  );
+  assert.equal(
+    findAdminModuleScriptTags('<script src="https://cdn.example.test/app.js"></script>').length,
+    0,
+  );
+});
+
+test("admin runtime composition refuses a half-connected module script entry", async () => {
+  const source = await readFile(
+    new URL("../frontend/scripts/sync-admin-runtime.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /assertNoModuleScriptEntry\(source, "admin runtime template"\)/);
+  assert.match(source, /assertNoModuleScriptEntry\(composed, "frontend\/index\.html"\)/);
 });

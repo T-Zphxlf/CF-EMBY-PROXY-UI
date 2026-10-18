@@ -25,6 +25,7 @@
 
 - Worker 生产入口只有 `worker/index.js` 的默认导出；生产 Worker 源码位于 `worker/`。
 - 生产管理端的事实来源是 `frontend/admin-runtime.template.html` 加 `frontend/scripts/admin-runtime-enhancements.mjs`；`frontend/index.html` 是组合产物。
+- `frontend/src/` 已冻结为非生产镜像：只改它不改变线上 UI。生产 UI 只改模板链，并同步镜像到 `frontend/src/`，否则文本断言失败；规则见 `frontend/src/README.md`。
 - 不把密钥写入仓库、日志、测试快照或文档。使用 `.dev.vars.example`、`frontend/.env.example` 中的占位配置。
 - 保持现有层依赖：`entry -> runtime -> core/platform`；代理 `http` slice 不依赖 `playback`，`playback` 可依赖 `http`。架构检查器是最终约束。
 - 行为修改必须补充或调整对应测试，并运行最小相关检查；完成前优先运行完整 `npm.cmd run check`。

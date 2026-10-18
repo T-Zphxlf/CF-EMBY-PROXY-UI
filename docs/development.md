@@ -34,7 +34,7 @@ npm.cmd run --workspace frontend build
 
 `wrangler.toml` 将 `frontend/dist` 声明为 `ASSETS` 静态资产目录。GitHub Actions 部署会先执行 `npm ci` 和 `npm run build:frontend`，再由 Wrangler 将前端与 Worker 一起上传；Worker 在没有 KV/远端管理端 HTML 配置时直接使用该构建产物。
 
-`frontend/src/` 的 Vue 文件由 `node scripts/check-frontend-sources.mjs` 编译检查，但当前 `frontend/index.html` 没有从 `src/App.vue` 导入的 module script；在修改 Vue 文件前先确认任务是否针对未来组件化链路。
+`frontend/src/` 的 Vue 文件由 `node scripts/check-frontend-sources.mjs` 编译检查，但当前 `frontend/index.html` 没有从 `src/App.vue` 导入的 module script。该目录已冻结为非生产镜像：改动不改变线上 UI，但必须与模板链同步镜像，否则文本断言失败；规则见 `frontend/src/README.md`。
 
 ## 3. 常用命令
 

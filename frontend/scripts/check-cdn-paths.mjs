@@ -374,6 +374,20 @@ function isExecutableInlineScriptType(rawType = "") {
   );
 }
 
+// frontend/src 已冻结为非生产镜像：出现 module script 就说明有人把组件化迁移做了一半。
+function findAdminModuleScriptTags(html = "") {
+  const moduleScripts = [];
+  for (const tag of iterateHtmlOpeningTags(html)) {
+    if (tag.tagName !== "script") continue;
+    const scriptType = String(tag.attributes.get("type") || "")
+      .trim()
+      .toLowerCase()
+      .split(";")[0];
+    if (scriptType === "module") moduleScripts.push(tag);
+  }
+  return moduleScripts;
+}
+
 function inspectRuntimeAssets(html = "") {
   const assets = [];
   let importMapCount = 0;
@@ -527,4 +541,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   await main();
 }
 
-export { inspectRuntimeAssets, isForbiddenRuntimeAsset };
+export { findAdminModuleScriptTags, inspectRuntimeAssets, isForbiddenRuntimeAsset };

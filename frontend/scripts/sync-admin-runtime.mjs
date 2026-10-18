@@ -8,7 +8,7 @@ import {
   ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
   ADMIN_RUNTIME_ENHANCEMENT_STYLE,
 } from "./admin-runtime-enhancements.mjs";
-import { inspectRuntimeAssets } from "./check-cdn-paths.mjs";
+import { findAdminModuleScriptTags, inspectRuntimeAssets } from "./check-cdn-paths.mjs";
 import { APP_VERSION } from "../../worker/core/build-info.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -73,8 +73,19 @@ function buildFallbackBootstrap(adminPath = "/admin") {
   };
 }
 
+// frontend/src 已冻结为非生产镜像：管理端 HTML 一旦出现 module script 就是半接通状态。
+function assertNoModuleScriptEntry(html = "", label = "") {
+  const moduleScripts = findAdminModuleScriptTags(html);
+  if (moduleScripts.length > 0) {
+    throw new Error(
+      `${label} 含有 ${moduleScripts.length} 个 module script：管理端 HTML 必须保持原生 script 交付，组件化迁移未启用（见 frontend/src/README.md）`,
+    );
+  }
+}
+
 function validateSourceTemplate(templateHtml = "") {
   const source = String(templateHtml || "");
+  assertNoModuleScriptEntry(source, "admin runtime template");
   const missing = [
     ADMIN_BOOTSTRAP_PLACEHOLDER,
     ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER,
@@ -132,7 +143,9 @@ function materializeFrontendIndex(templateHtml = "") {
     throw new Error("frontend/index.html 缺少 #app 根节点");
   }
 
-  return composeAdminRuntimeEnhancements(output);
+  const composed = composeAdminRuntimeEnhancements(output);
+  assertNoModuleScriptEntry(composed, "frontend/index.html");
+  return composed;
 }
 
 function replaceRequired(source, search, replacement, label) {
