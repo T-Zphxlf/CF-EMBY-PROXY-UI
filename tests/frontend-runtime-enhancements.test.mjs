@@ -22,7 +22,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, applyUiSkin, resolveCurrentUiSkin, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -59,6 +59,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
     TextEncoder,
     Uint8Array,
     URL: windowOverrides.URL || URL,
+    localStorage: windowOverrides.localStorage,
     window,
   });
   return window.__enhancementTestHooks;
@@ -66,6 +67,64 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
 
 test("admin runtime enhancement observes lazily mounted logs view", () => {
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /shellHookSelector = '[^']*#view-logs/);
+});
+
+// The enhancement layer patches the minified admin shell by #id and [data-*] selectors.
+// Nothing else fails when upstream renames one, so check every anchor statically.
+function collectEnhancementSelectorAnchors(script = "") {
+  const pattern =
+    /(querySelector(?:All)?|closest|matches|getElementById)(?:\?\.)?\(\s*(['"])([^'"]+)\2/g;
+  const ids = new Set();
+  const dataAttributes = new Set();
+  for (const match of String(script).matchAll(pattern)) {
+    const [, call, , value] = match;
+    if (call === "getElementById") ids.add(value);
+    for (const item of value.matchAll(/#([A-Za-z][\w-]*)/g)) ids.add(item[1]);
+    for (const item of value.matchAll(/\[(data-[\w-]+)/g)) dataAttributes.add(item[1]);
+  }
+  return { ids: [...ids], dataAttributes: [...dataAttributes] };
+}
+
+function isEnhancementOwnedAnchor(script, anchor, kind) {
+  return ["'", '"'].some((quote) =>
+    kind === "id"
+      ? script.includes(`id=${quote}${anchor}${quote}`)
+      : script.includes(`setAttribute(${quote}${anchor}${quote}`) ||
+        script.includes(`${anchor}=${quote}`),
+  );
+}
+
+test("every enhancement selector anchor still exists in the admin shell", async () => {
+  const [template, enhancementSource] = await Promise.all([
+    readFile(new URL("../frontend/admin-runtime.template.html", import.meta.url), "utf8"),
+    readFile(
+      new URL("../frontend/scripts/admin-runtime-enhancements.mjs", import.meta.url),
+      "utf8",
+    ),
+  ]);
+  const { ids, dataAttributes } = collectEnhancementSelectorAnchors(
+    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
+  );
+  assert.ok(ids.length > 10 && dataAttributes.length > 3, "anchor extraction must not regress");
+
+  const missingIds = ids.filter(
+    (id) =>
+      !template.includes(`id:"${id}"`) &&
+      !template.includes(`id="${id}"`) &&
+      !isEnhancementOwnedAnchor(enhancementSource, id, "id"),
+  );
+  const missingDataAttributes = dataAttributes.filter(
+    (attribute) =>
+      !template.includes(attribute) &&
+      !isEnhancementOwnedAnchor(enhancementSource, attribute, "data"),
+  );
+
+  assert.deepEqual(missingIds, [], "enhancement patches a #id the admin shell no longer renders");
+  assert.deepEqual(
+    missingDataAttributes,
+    [],
+    "enhancement patches a [data-*] anchor the admin shell no longer renders",
+  );
 });
 
 test("config save enhancement adds an idempotency token", async () => {
@@ -88,6 +147,169 @@ test("config save enhancement adds an idempotency token", async () => {
 
   assert.match(requests[1].payload.mutationId, /^cfg-/);
   assert.equal(messages.length, 0);
+});
+
+test("settings save sends the revision the form was built from", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    template,
+    /syncSettingsFormFromRuntimeConfig\(r=this\.runtimeConfig\)\{this\.settingsFormBaseRevision=String\(this\.adminRevisions\?\.configRevision\|\|""\)/,
+  );
+  assert.match(
+    template,
+    /await this\.apiCall\("saveConfig",\{config:p,expectedConfigRevision:String\(this\.settingsFormBaseRevision\|\|""\),meta:/,
+  );
+  assert.match(template, /adminBootstrapCache:null,settingsFormBaseRevision:"",loginPromise:null/);
+  assert.match(template, /\{type:"password",id:"cfg-cf-token"/);
+  assert.match(template, /\{type:"password",id:"cfg-tg-token"/);
+});
+
+test("system UI settings panels keep the documented top-to-bottom order", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  const panel = template.slice(template.indexOf('id:"set-ui"'), template.indexOf('id:"set-dns"'));
+  assert.ok(panel.length > 0, "set-ui panel region must exist");
+  const order = [
+    '"Schedule"',
+    '"admin-theme-skin-root"',
+    '"Radius"',
+    '"Mode"',
+    '"Dashboard"',
+    '"Cloudflare"',
+    '"Host Prefix"',
+    '"Copy Panel"',
+  ];
+  let last = -1;
+  for (const marker of order) {
+    const at = panel.indexOf(marker);
+    assert.ok(at > last, marker + " must appear after the previous panel");
+    last = at;
+  }
+});
+
+test("admin api calls reject instead of hanging forever", async () => {
+  const { withUiRequestTimeout } = loadEnhancementTestHooks(
+    {},
+    {
+      setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
+      clearTimeout: (id) => globalThis.clearTimeout(id),
+    },
+  );
+  const pending = new Promise(() => {});
+  await assert.rejects(
+    withUiRequestTimeout({}, "getLogs", pending, 10),
+    (error) => error.code === "UI_REQUEST_TIMEOUT",
+  );
+  assert.equal(await withUiRequestTimeout({}, "getLogs", Promise.resolve("ok"), 50), "ok");
+  assert.equal(withUiRequestTimeout({}, "updateWorkerAndAdminIndex", pending, 5), pending);
+});
+
+test("dialog overlays gain native dialog semantics, focus and Escape close", () => {
+  const clicks = [];
+  const title = { id: "" };
+  const confirmButton = {
+    focused: false,
+    focus() {
+      this.focused = true;
+    },
+  };
+  const surface = {
+    dataset: {},
+    attributes: {},
+    setAttribute(name, value) {
+      this.attributes[name] = value;
+    },
+    querySelector(selector) {
+      if (selector === "h3") return title;
+      if (selector.startsWith("input")) return null;
+      if (selector === "button:last-of-type") return confirmButton;
+      return null;
+    },
+    contains() {
+      return false;
+    },
+  };
+  const backdrop = {
+    querySelector: () => surface,
+    click() {
+      clicks.push("close");
+    },
+  };
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById(id) {
+      return null;
+    },
+    querySelectorAll(selector) {
+      return selector === "[data-ui-backdrop] [data-ui-dialog-surface]" ? [surface] : [backdrop];
+    },
+    querySelector() {
+      return null;
+    },
+    activeElement: null,
+  };
+  const { syncDialogAccessibility, handleDialogEscapeKey } = loadEnhancementTestHooks(document);
+
+  syncDialogAccessibility();
+  assert.equal(surface.attributes.role, "dialog");
+  assert.equal(surface.attributes["aria-modal"], "true");
+  assert.equal(surface.attributes["aria-labelledby"], title.id);
+  assert.equal(confirmButton.focused, true);
+
+  handleDialogEscapeKey({ key: "Enter", defaultPrevented: false, preventDefault() {} });
+  assert.deepEqual(clicks, []);
+  handleDialogEscapeKey({ key: "Escape", defaultPrevented: false, preventDefault() {} });
+  assert.deepEqual(clicks, ["close"]);
+});
+
+test("ui skin runtime reads storage, persists the choice and marks the document", () => {
+  const store = new Map();
+  const attributes = {};
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      setAttribute(name, value) {
+        attributes[name] = value;
+      },
+      getAttribute(name) {
+        return attributes[name] ?? null;
+      },
+    },
+  };
+  const { readStoredUiSkin, applyUiSkin, resolveCurrentUiSkin } = loadEnhancementTestHooks(
+    document,
+    {
+      localStorage: {
+        getItem: (key) => (store.has(key) ? store.get(key) : null),
+        setItem: (key, value) => store.set(key, String(value)),
+      },
+    },
+  );
+
+  assert.equal(readStoredUiSkin(), "classic");
+  assert.equal(applyUiSkin("claude", { persist: true }), "claude");
+  assert.equal(attributes["data-theme"], "claude");
+  assert.equal(store.get("adminUiSkin"), "claude");
+  assert.equal(readStoredUiSkin(), "claude");
+  assert.equal(resolveCurrentUiSkin({ uiSkin: "claude" }), "claude");
+  assert.equal(applyUiSkin("classic", { persist: true }), "classic");
+  assert.equal(attributes["data-theme"], "classic");
+  assert.equal(store.get("adminUiSkin"), "classic");
+  assert.equal(resolveCurrentUiSkin({}), "classic");
+  assert.equal(applyUiSkin("unknown"), "classic");
 });
 
 test("node health probes carry the line port into the ping target", async () => {

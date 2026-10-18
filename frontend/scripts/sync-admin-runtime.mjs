@@ -137,14 +137,14 @@ function materializeFrontendIndex(templateHtml = "") {
 
 function replaceRequired(source, search, replacement, label) {
   if (!source.includes(search)) {
-    throw new Error(`admin runtime template 缺少 GET 探测契约片段：${label}`);
+    throw new Error(`admin runtime template 缺少契约片段：${label}`);
   }
   return source.replace(search, replacement);
 }
 
 function replaceAllRequired(source, search, replacement, label) {
   if (!source.includes(search)) {
-    throw new Error(`admin runtime template 缺少 GET 探测契约片段：${label}`);
+    throw new Error(`admin runtime template 缺少契约片段：${label}`);
   }
   return source.replaceAll(search, replacement);
 }
@@ -373,15 +373,13 @@ function applyHeadProbeContract(outputHtml = "") {
 }
 
 function composeAdminRuntimeEnhancements(outputHtml = "") {
-  const output = applyHeadProbeContract(stripLegacyConfigSnapshotUi(outputHtml))
-    .replace(
-      "},syncSettingsFormFromRuntimeConfig",
-      "},syncReleaseSourcePreviewInSettingsForm(){const r=this.settingsForm&&typeof this.settingsForm==='object'?this.settingsForm:{};const o=String(r.githubRepo||r.releaseRepo||r.repo||'').trim();if(o&&r.githubRepo!==o)r.githubRepo=o;return o},syncSettingsFormFromRuntimeConfig",
-    )
-    .replace(
-      'this.apiCall("saveConfig",{config:p,meta:{section:o,source:"ui"}})',
-      'this.apiCall("saveConfig",{config:p,expectedConfigRevision:String(this.adminRevisions?.configRevision||""),meta:{section:o,source:"ui"}})',
-    );
+  // 模板只保留 2 处 syncReleaseSourcePreviewInSettingsForm 调用，方法体由这里补齐。
+  const output = replaceRequired(
+    applyHeadProbeContract(stripLegacyConfigSnapshotUi(outputHtml)),
+    "},syncSettingsFormFromRuntimeConfig",
+    "},syncReleaseSourcePreviewInSettingsForm(){const r=this.settingsForm&&typeof this.settingsForm==='object'?this.settingsForm:{};const o=String(r.githubRepo||r.releaseRepo||r.repo||'').trim();if(o&&r.githubRepo!==o)r.githubRepo=o;return o},syncSettingsFormFromRuntimeConfig",
+    "发布源预览设置方法",
+  );
   if (!output.includes("</head>")) {
     throw new Error("frontend/index.html 缺少 </head>，无法组合 runtime enhancements");
   }
@@ -397,6 +395,13 @@ function composeAdminRuntimeEnhancements(outputHtml = "") {
     composed.match(/data-admin-runtime-enhancements="1"/g)?.length || 0;
   if (enhancementMarkerCount !== 2) {
     throw new Error(`frontend/index.html runtime enhancements 数量异常：${enhancementMarkerCount}`);
+  }
+  if (!composed.includes("syncReleaseSourcePreviewInSettingsForm(){")) {
+    throw new Error("frontend/index.html 缺少发布源预览设置方法定义");
+  }
+  // 并发编辑保护由模板自带；它若随模板重新编译消失，保存会静默退化为后写覆盖。
+  if (!composed.includes("expectedConfigRevision:")) {
+    throw new Error("frontend/index.html 缺少设置保存并发保护（expectedConfigRevision）");
   }
   return composed;
 }

@@ -1,5 +1,7 @@
 const ADMIN_RUNTIME_ENHANCEMENT_STYLE = `<style data-admin-runtime-enhancements="1">
 :root{--ui-control-radius-px:var(--ui-radius-px,10px);--admin-toolbar-hover-bg:rgba(148,163,184,.14);--admin-toolbar-hover-bg-dark:rgba(51,65,85,.68)}
+:root{--ui-c-white:255 255 255;--ui-c-n-50:248 250 252;--ui-c-n-100:241 245 249;--ui-c-n-200:226 232 240;--ui-c-n-300:203 213 225;--ui-c-n-400:148 163 184;--ui-c-n-500:100 116 139;--ui-c-n-600:71 85 105;--ui-c-n-700:51 65 85;--ui-c-n-800:30 41 59;--ui-c-n-900:15 23 42;--ui-c-n-950:2 6 23;--ui-c-a-50:239 246 255;--ui-c-a-100:219 234 254;--ui-c-a-200:191 219 254;--ui-c-a-300:147 197 253;--ui-c-a-400:96 165 250;--ui-c-a-500:59 130 246;--ui-c-a-600:37 99 235;--ui-c-a-700:29 78 216;--ui-c-a-800:30 64 175;--ui-c-a-900:30 58 138;--ui-c-a-950:23 37 84;--ui-surface-panel:255 255 255;--ui-surface-soft:248 250 252;--ui-surface-dark:15 23 42;--ui-border-soft:226 232 240;--ui-border-strong:203 213 225;--ui-border-dark:51 65 85;--ui-text-strong:15 23 42;--ui-text-dark:248 251 255;--ui-shadow-brand:0 10px 22px rgba(37,99,235,0.16);--ui-shadow-brand-hover:0 14px 28px rgba(37,99,235,0.18);--ui-shadow-brand-soft:0 6px 16px rgba(59,130,246,0.08);--ui-shadow-card-hover:0 18px 36px rgba(15,23,42,0.07);--ui-shadow-card-hover-dark:0 16px 32px rgba(2,6,23,0.34);--ui-shadow-surface:0 0 0 1px rgba(226,232,240,0.92),0 10px 22px rgba(15,23,42,0.05);--ui-shadow-surface-dark:0 0 0 1px rgba(51,65,85,0.88),0 10px 22px rgba(2,6,23,0.3);--ui-shadow-surface-hover:0 0 0 1px rgba(203,213,225,0.98),0 14px 28px rgba(15,23,42,0.08);--ui-shadow-surface-hover-dark:0 0 0 1px rgba(71,85,105,0.92),0 16px 30px rgba(2,6,23,0.38);--ui-chart-accent:59,130,246;--ui-chart-line:#3b82f6;--ui-chart-axis:#0f172a;--ui-chart-axis-dark:#e2e8f0;--ui-chart-tick:#64748b;--ui-chart-tick-dark:#94a3b8;--ui-chart-grid:rgba(148,163,184,0.22);--ui-chart-grid-dark:rgba(71,85,105,0.35);--ui-accent-shadow:rgba(59,130,246,0.08)}
+html[data-theme="claude"]{--ui-c-white:250 249 245;--ui-c-n-50:245 244 237;--ui-c-n-100:237 236 228;--ui-c-n-200:232 230 220;--ui-c-n-300:209 207 197;--ui-c-n-400:176 174 165;--ui-c-n-500:135 134 127;--ui-c-n-600:94 93 89;--ui-c-n-700:77 76 72;--ui-c-n-800:48 48 46;--ui-c-n-900:20 20 19;--ui-c-n-950:14 14 13;--ui-c-a-50:250 243 239;--ui-c-a-100:246 228 220;--ui-c-a-200:237 199 183;--ui-c-a-300:224 164 140;--ui-c-a-400:217 119 87;--ui-c-a-500:201 100 66;--ui-c-a-600:180 85 58;--ui-c-a-700:150 69 47;--ui-c-a-800:122 56 38;--ui-c-a-900:95 44 30;--ui-c-a-950:61 28 18;--ui-surface-panel:250 249 245;--ui-surface-soft:245 244 237;--ui-surface-dark:20 20 19;--ui-border-soft:232 230 220;--ui-border-strong:209 207 197;--ui-border-dark:48 48 46;--ui-text-strong:20 20 19;--ui-text-dark:250 249 245;--ui-shadow-brand:0 10px 22px rgba(201,100,66,0.18);--ui-shadow-brand-hover:0 14px 28px rgba(201,100,66,0.20);--ui-shadow-brand-soft:0 6px 16px rgba(217,119,87,0.10);--ui-shadow-card-hover:0 18px 36px rgba(20,20,19,0.07);--ui-shadow-card-hover-dark:0 16px 32px rgba(0,0,0,0.34);--ui-shadow-surface:0 0 0 1px rgba(232,230,220,0.92),0 10px 22px rgba(20,20,19,0.05);--ui-shadow-surface-dark:0 0 0 1px rgba(48,48,46,0.88),0 10px 22px rgba(0,0,0,0.3);--ui-shadow-surface-hover:0 0 0 1px rgba(209,207,197,0.98),0 14px 28px rgba(20,20,19,0.08);--ui-shadow-surface-hover-dark:0 0 0 1px rgba(77,76,72,0.92),0 16px 30px rgba(0,0,0,0.38);--ui-chart-accent:201,100,66;--ui-chart-line:#c96442;--ui-chart-axis:#141413;--ui-chart-axis-dark:#e8e6dc;--ui-chart-tick:#4a4944;--ui-chart-tick-dark:#c6c4b9;--ui-chart-grid:rgba(94,93,89,0.34);--ui-chart-grid-dark:rgba(170,167,154,0.32);--ui-accent-shadow:rgba(201,100,66,0.08)}
 #app-shell .rounded-control,
 #app-shell [role="tab"]{border-radius:max(16px,calc(var(--ui-control-radius-px) + 2px)) !important}
 #app-shell [role="tab"]{position:relative;isolation:isolate}
@@ -186,6 +188,502 @@ body.bg-slate-50,body.antialiased{background:#f8fafc !important;color:#0f172a !i
 #view-dashboard [data-dashboard-traffic-toggle="1"] i,#view-dashboard [data-dashboard-traffic-toggle="1"] svg{width:1rem;height:1rem}
 .dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:#334155;background:rgba(15,23,42,.92);color:#cbd5e1}
 .dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:#64748b;background:#111827;color:#34d399}
+
+/* ── Claude palette layer ────────────────────────────────────────────
+   Warm parchment neutrals, terracotta accent, warm-toned dark mode.
+   Overrides the earlier cool slate/blue theme in one place. */html[data-theme="claude"]{
+  --admin-toolbar-hover-bg:rgba(201,100,66,.10);
+  --admin-toolbar-hover-bg-dark:rgba(201,100,66,.18);
+}:where(html[data-theme="claude"]) body.bg-slate-50,
+:where(html[data-theme="claude"]) body.antialiased{background:#f5f4ed !important;color:#141413 !important}:where(html[data-theme="claude"]) #app-shell{background:#f5f4ed;color:#141413}html[data-theme="claude"].dark body,
+html[data-theme="claude"].dark body.antialiased{background:#141413 !important;color:#faf9f5 !important}:where(html[data-theme="claude"]) .dark #app-shell{background:#141413;color:#faf9f5}:where(html[data-theme="claude"]) .glass-card{background:#faf9f5;border:1px solid #e8e6dc;box-shadow:0 4px 24px rgba(20,20,19,.05)}:where(html[data-theme="claude"]) .dark .glass-card{background:#242420;border:1px solid #30302e;box-shadow:none}:where(html[data-theme="claude"]) #app-shell.no-backdrop-fx [data-ui-backdrop="1"]{background-color:rgba(20,20,19,.72) !important}:where(html[data-theme="claude"]) #app-shell.no-backdrop-fx [data-ui-surface-blur="1"]{background-color:rgba(250,249,245,.98) !important}:where(html[data-theme="claude"]) .dark #app-shell.no-backdrop-fx [data-ui-surface-blur="1"]{background-color:rgba(36,36,32,.98) !important}:where(html[data-theme="claude"]) .ui-section-title{color:#141413}:where(html[data-theme="claude"]) .dark .ui-section-title{color:#faf9f5}:where(html[data-theme="claude"]) .ui-section-kicker{color:#87867f}:where(html[data-theme="claude"]) .dark .ui-section-kicker{color:#87867f}:where(html[data-theme="claude"]) .ui-chip-muted{border-color:#e8e6dc;background:#faf9f5;color:#5e5d59}:where(html[data-theme="claude"]) .dark .ui-chip-muted{border-color:#30302e;background:#242420;color:#d1cfc5}:where(html[data-theme="claude"]) .ui-block-head{border-bottom-color:rgba(232,230,220,.9)}:where(html[data-theme="claude"]) .dark .ui-block-head{border-color:#30302e}:where(html[data-theme="claude"]) .ui-settings-panel{border-color:#e8e6dc;background:rgba(250,249,245,.7);box-shadow:0 1px 2px rgba(20,20,19,.05)}:where(html[data-theme="claude"]) .dark .ui-settings-panel{border-color:#30302e;background:rgba(36,36,32,.55)}:where(html[data-theme="claude"]) .ui-field-label{color:#3d3d3a}:where(html[data-theme="claude"]) .dark .ui-field-label{color:#e8e6dc}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]{color:#5e5d59}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]{color:#b0aea5}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:hover{color:#c96442}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]:hover{color:#d97757}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:0 0 0 2px rgba(201,100,66,.28) !important}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:0 0 0 2px rgba(217,119,87,.32) !important}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:#c96442}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="dark"]{color:#d97757}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:#b4553a}:where(html[data-theme="claude"]) .dark #app-shell [data-admin-toolbar-action="theme"][data-theme-state="light"]{color:#d97757}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced="1"]{border-color:#e8e6dc;background:rgba(245,244,237,.72)}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced="1"]{border-color:#30302e;background:rgba(20,20,19,.4)}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced="1"]>summary{color:#3d3d3a}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced="1"]>summary{color:#e8e6dc}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced-content="1"]{border-top-color:#e8e6dc}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced-content="1"]{border-color:#30302e}:where(html[data-theme="claude"]) #node-modal [data-admin-node-advanced-headers="1"]{background:#faf9f5}:where(html[data-theme="claude"]) .dark #node-modal [data-admin-node-advanced-headers="1"]{background:rgba(36,36,32,.72)}:where(html[data-theme="claude"]) .dark #node-modal>div{background:#242420 !important;border-color:#30302e !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-card-shell,
+:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-panel-shell{background:#242420 !important;border-color:#30302e !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn{background:#c96442 !important;color:#faf9f5 !important;box-shadow:0 10px 24px rgba(201,100,66,.22) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn:hover,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn:hover{background:#b4553a !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-trigger,
+:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-search,
+:where(html[data-theme="claude"]) .dark #view-nodes .node-tag-filter-chip,
+:where(html[data-theme="claude"]) .dark #view-nodes .node-action-btn,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-secondary-btn{background:rgba(36,36,32,.9) !important;color:#e8e6dc !important;border-color:rgba(77,76,72,.85) !important}:where(html[data-theme="claude"]) #view-settings{--settings-surface:#faf9f5;--settings-soft:#f5f4ed;--settings-border:#e8e6dc;--settings-border-strong:#d1cfc5}:where(html[data-theme="claude"]) .dark #view-settings{--settings-surface:#242420;--settings-soft:#30302e;--settings-border:#30302e;--settings-border-strong:#4d4c48}:where(html[data-theme="claude"]) #view-settings .settings-secondary-btn,
+:where(html[data-theme="claude"]) #view-settings .settings-secondary-label,
+:where(html[data-theme="claude"]) #view-settings button[class*="border-slate-200"],
+:where(html[data-theme="claude"]) #view-settings button[class*="border-slate-300"],
+:where(html[data-theme="claude"]) #view-settings label[class*="border-slate-200"],
+:where(html[data-theme="claude"]) #view-settings label[class*="bg-slate-200"]{color:#3d3d3a !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-btn,
+:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label,
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-200"],
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-300"],
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="border-slate-200"],
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]{color:#e8e6dc !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-btn:hover,
+:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover,
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-200"]:hover,
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-slate-300"]:hover,
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="border-slate-200"]:hover,
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="bg-slate-200"]:hover{background:#30302e !important;color:#faf9f5 !important}:where(html[data-theme="claude"]) #view-settings .set-tab{color:#5e5d59 !important}:where(html[data-theme="claude"]) #view-settings .set-tab:hover{color:#141413 !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab{color:#d1cfc5 !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab:hover{background:#30302e !important;color:#faf9f5 !important}:where(html[data-theme="claude"]) #view-settings .set-tab[aria-selected="true"]{background:#f5f4ed !important;border-color:#e0a48c !important;color:#b4553a !important;box-shadow:inset 0 0 0 1px rgba(201,100,66,.28) !important}:where(html[data-theme="claude"]) .dark #view-settings .set-tab[aria-selected="true"]{background:#30302e !important;border-color:#c96442 !important;color:#e0a48c !important;box-shadow:inset 0 0 0 1px rgba(201,100,66,.35) !important}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:#e8e6dc;background:rgba(250,249,245,.9);color:#5e5d59}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{background:#f5f4ed;border-color:#b0aea5;color:#c96442}:where(html[data-theme="claude"]) #view-dashboard [data-dashboard-traffic-toggle="1"]:focus-visible{box-shadow:0 0 0 2px rgba(201,100,66,.24)}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]{border-color:#30302e;background:rgba(36,36,32,.92);color:#d1cfc5}:where(html[data-theme="claude"]) .dark #view-dashboard [data-dashboard-traffic-toggle="1"]:hover{border-color:#4d4c48;background:#30302e;color:#d97757}:where(html[data-theme="claude"]) .d1-heatmap-col-label{color:#87867f}:where(html[data-theme="claude"]) .dark .d1-heatmap-col-label{color:#87867f}:where(html[data-theme="claude"]) .d1-heatmap-row-label{color:#5e5d59}:where(html[data-theme="claude"]) .dark .d1-heatmap-row-label{color:#d1cfc5}:where(html[data-theme="claude"]) .d1-heat-cell{border-color:rgba(201,100,66,.18);background:rgba(201,100,66,var(--d1-heat-alpha,.08))}:where(html[data-theme="claude"]) .d1-heat-cell.is-active:hover{border-color:rgba(201,100,66,.4);box-shadow:0 10px 22px rgba(201,100,66,.12)}:where(html[data-theme="claude"]) .d1-heat-cell.is-empty{border-color:#e8e6dc;background:#f5f4ed}:where(html[data-theme="claude"]) .dark .d1-heat-cell{border-color:rgba(217,119,87,.18);background:rgba(217,119,87,var(--d1-heat-alpha,.12))}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-active:hover{border-color:rgba(224,164,140,.42);box-shadow:0 12px 26px rgba(201,100,66,.16)}:where(html[data-theme="claude"]) .dark .d1-heat-cell.is-empty{border-color:#30302e;background:rgba(20,20,19,.74)}:where(html[data-theme="claude"]) .dark [class*="text-slate-500"],
+:where(html[data-theme="claude"]) .dark [class*="text-slate-400"],
+:where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-500,
+:where(html[data-theme="claude"]) .dark [data-admin-node-tmdb-aggregation="1"] .text-slate-400{color:#b0aea5 !important}:where(html[data-theme="claude"]) .dark #view-settings label.text-slate-500,
+:where(html[data-theme="claude"]) .dark #cfg-source-direct-nodes-summary,
+:where(html[data-theme="claude"]) .dark #view-logs p.text-slate-500{color:#b0aea5 !important}/* ===== Direction A · 暖纸编辑器（排版层）===== */
+html[data-theme="claude"]{--font-display:"Noto Serif SC","Source Serif 4",Georgia,"Songti SC","SimSun",serif;--font-body:system-ui,-apple-system,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;--font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;--d1-paper:#f5f4ed;--d1-raised:#faf9f5;--d1-sunk:#efeee6;--d1-ink:#141413;--d1-ink-2:#3d3d3a;--d1-muted:#87867f;--d1-rule:#e8e6dc;--d1-rule-2:#d8d5c9;--d1-clay:#c96442;--d1-clay-deep:#b4553a;--d1-clay-soft:#e0a48c;--d1-radius:14px}html[data-theme="claude"],
+:where(html[data-theme="claude"]) body,
+:where(html[data-theme="claude"]) #app-shell{font-family:var(--font-body);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}:where(html[data-theme="claude"]) #app-shell{font-variant-numeric:tabular-nums}:where(html[data-theme="claude"]) h1,
+:where(html[data-theme="claude"]) h2,
+:where(html[data-theme="claude"]) h3,
+:where(html[data-theme="claude"]) h4,
+:where(html[data-theme="claude"]) .ui-section-title{font-family:var(--font-display);font-weight:600;letter-spacing:-.01em;text-wrap:balance}:where(html[data-theme="claude"]) h1{letter-spacing:-.022em}:where(html[data-theme="claude"]) #app-shell h1,
+:where(html[data-theme="claude"]) #app-shell h2,
+:where(html[data-theme="claude"]) #app-shell [class*="text-2xl"][class*="font-bold"],
+:where(html[data-theme="claude"]) #app-shell [class*="text-3xl"][class*="font-bold"]{font-family:var(--font-display);letter-spacing:-.012em}:where(html[data-theme="claude"]) .ui-section-title{font-size:1.0625rem;line-height:1.5rem;color:var(--d1-ink)}:where(html[data-theme="claude"]) .dark .ui-section-title{color:#f4f2ea}:where(html[data-theme="claude"]) .ui-section-kicker{font-family:var(--font-body);font-size:.6875rem;line-height:1rem;font-weight:600;letter-spacing:.12em;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark .ui-section-kicker{color:#8f8d84}:where(html[data-theme="claude"]) pre,
+:where(html[data-theme="claude"]) code,
+:where(html[data-theme="claude"]) kbd,
+:where(html[data-theme="claude"]) samp,
+:where(html[data-theme="claude"]) .font-mono{font-family:var(--font-mono)}:where(html[data-theme="claude"]) thead th{font-family:var(--font-body);font-size:.6875rem;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark thead th{color:#8f8d84}:where(html[data-theme="claude"]) ::selection{background:rgba(201,100,66,.16);color:var(--d1-ink)}/* 纸张层级：只用 1px 暖灰描边，不用彩色阴影 */
+:where(html[data-theme="claude"]) .glass-card{border-radius:var(--d1-radius) !important;border:1px solid var(--d1-rule) !important;background:var(--d1-raised) !important;box-shadow:none !important;transition:border-color .18s ease,background-color .18s ease}:where(html[data-theme="claude"]) .glass-card:hover{border-color:var(--d1-rule-2) !important}:where(html[data-theme="claude"]) .dark .glass-card{background:#242420 !important;border-color:#30302e !important;box-shadow:none !important}:where(html[data-theme="claude"]) .dark .glass-card:hover{border-color:#4a4a45 !important}:where(html[data-theme="claude"]) .ui-settings-panel,
+:where(html[data-theme="claude"]) .ui-chip-muted{border-radius:10px;box-shadow:none}:where(html[data-theme="claude"]) #sidebar{background:var(--d1-raised);border-right:1px solid var(--d1-rule);box-shadow:none}:where(html[data-theme="claude"]) .dark #sidebar{background:#1b1b18;border-color:#2b2b28}@media (max-width:767px){:where(html[data-theme="claude"]) #sidebar{box-shadow:0 24px 60px -28px rgba(20,20,19,.42)}}:where(html[data-theme="claude"]) #app-shell button,
+:where(html[data-theme="claude"]) #app-shell a,
+:where(html[data-theme="claude"]) #app-shell [role="tab"]{transition:background-color .16s ease,border-color .16s ease,color .16s ease}:where(html[data-theme="claude"]) #app-shell :focus-visible{outline:2px solid rgba(201,100,66,.55);outline-offset:2px}:where(html[data-theme="claude"]) .dark #app-shell :focus-visible{outline-color:rgba(217,119,87,.65)}:where(html[data-theme="claude"]) #app-shell [data-admin-toolbar-action]:focus-visible{box-shadow:none !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn{box-shadow:none !important;background:var(--d1-clay) !important}:where(html[data-theme="claude"]) #view-nodes .node-toolbar-primary-btn,
+:where(html[data-theme="claude"]) #node-modal .node-modal-primary-btn{border-radius:10px}:where(html[data-theme="claude"]) [data-ui-dialog-surface="1"],
+:where(html[data-theme="claude"]) [data-ui-toast="1"]{box-shadow:0 24px 60px -28px rgba(20,20,19,.45) !important}@media (prefers-reduced-motion:reduce){:where(html[data-theme="claude"]) .glass-card{transition:none}}/* ===== Direction A · 排版微调（行高 / 断行 / 数字 / 微标签）===== */
+/* 1. 中文行高与断行：正文 1.7，标题逐级收紧；避免末行孤字 */
+:where(html[data-theme="claude"]) #app-shell p,
+:where(html[data-theme="claude"]) #app-shell li,
+:where(html[data-theme="claude"]) #app-shell dd{line-height:1.7;text-wrap:pretty;hanging-punctuation:allow-end}:where(html[data-theme="claude"]) #app-shell h1{line-height:1.24}:where(html[data-theme="claude"]) #app-shell h2{line-height:1.3}:where(html[data-theme="claude"]) #app-shell h3{line-height:1.4}:where(html[data-theme="claude"]) #app-shell h4{line-height:1.45}:where(html[data-theme="claude"]) #app-shell h1,
+:where(html[data-theme="claude"]) #app-shell h2,
+:where(html[data-theme="claude"]) #app-shell h3{text-wrap:balance}:where(html[data-theme="claude"]) #app-shell small,
+:where(html[data-theme="claude"]) #app-shell .text-xs{line-height:1.5}/* 2. 中西文混排：标点压缩、字距正常化，代码块关掉连字 */
+:where(html[data-theme="claude"]) #app-shell{text-spacing-trim:trim-start;font-kerning:normal}:where(html[data-theme="claude"]) #app-shell :is(pre,code,kbd,samp,.font-mono){font-variant-ligatures:none;letter-spacing:0}/* 3. 上标小节：字距收窄，与标题合成一个块 */
+:where(html[data-theme="claude"]) .ui-section-kicker{letter-spacing:.1em;margin-bottom:4px}:where(html[data-theme="claude"]) .ui-section-title{margin-top:0;line-height:1.45}:where(html[data-theme="claude"]) .ui-block-head .ui-section-title{line-height:1.4}/* 4. 大字号数字：等宽且收紧，行高不撑开卡片 */
+:where(html[data-theme="claude"]) #app-shell [class*="text-2xl"][class*="font-bold"],
+:where(html[data-theme="claude"]) #app-shell [class*="text-3xl"][class*="font-bold"]{font-variant-numeric:tabular-nums lining-nums;letter-spacing:-.028em;line-height:1.15}/* 5. 表单：正文体、正字距，占位符不低于 AA */
+:where(html[data-theme="claude"]) #app-shell label{line-height:1.5;letter-spacing:.005em}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea){font-family:var(--font-body);letter-spacing:.005em}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea)::placeholder{color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell :is(input,select,textarea)::placeholder{color:#8f8d84}/* 6. 表格：行距略松于默认、表头字距微收 */
+:where(html[data-theme="claude"]) #app-shell tbody td{line-height:1.55}:where(html[data-theme="claude"]) #app-shell thead th{letter-spacing:.06em}/* 7. 微标签与链接：可读性优先 */
+:where(html[data-theme="claude"]) .ui-chip-muted{font-size:.6875rem;line-height:1.35;letter-spacing:.02em}:where(html[data-theme="claude"]) #app-shell a{text-underline-offset:.2em;text-decoration-thickness:1px}/* ===== Direction A · 组件排版（统计卡 / 分节头 / 表格 / 表单 / 微标签）===== */
+
+/* 1. 统计卡：左侧色条改为顶部 2px 分节规则，标签→数字→注释按 8/10/6 的节奏收紧 */
+:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]{border-left-width:0 !important;border-top-width:2px !important;border-top-color:var(--d1-rule-2) !important}:where(html[data-theme="claude"]) .dark #app-shell [class*="border-l-4"]{border-top-color:#4a4a45 !important}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>p:first-child{font-size:.75rem;line-height:1.35;font-weight:500;letter-spacing:.08em;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell [class*="border-l-4"]>p:first-child{color:#8f8d84}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>h3{margin-top:.5rem !important;font-size:clamp(1.5rem,1.7vw,1.875rem);line-height:1.12;word-break:break-word;overflow-wrap:anywhere}:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>p:last-child{margin-top:.625rem !important;font-size:.75rem;line-height:1.6;letter-spacing:.01em}/* 2. 分节头：标题块左对齐顶部，徽标不再拉高整行高度 */
+:where(html[data-theme="claude"]) .ui-block-head{align-items:flex-start !important;margin-bottom:1rem;padding-bottom:.625rem}:where(html[data-theme="claude"]) .ui-block-head>div:first-child{min-width:0}:where(html[data-theme="claude"]) .ui-block-head .ui-chip-muted{margin-top:2px;flex:0 0 auto}/* 3. 表格：等宽数据 + 略松的行距，行分隔线降一级 */
+:where(html[data-theme="claude"]) #app-shell table{font-variant-numeric:tabular-nums}:where(html[data-theme="claude"]) #app-shell thead th{padding-top:.625rem;padding-bottom:.625rem}:where(html[data-theme="claude"]) #app-shell tbody td{padding-top:.5625rem;padding-bottom:.5625rem}:where(html[data-theme="claude"]) #app-shell tbody td .break-all{word-break:break-word}/* 4. 表单：字段标签与控件之间的间距按 6px 收紧，面板内边距统一 */
+:where(html[data-theme="claude"]) #app-shell .ui-settings-panel{padding:1.375rem}:where(html[data-theme="claude"]) .ui-field-label{margin-bottom:.375rem;font-size:.8125rem;line-height:1.35;letter-spacing:.015em}:where(html[data-theme="claude"]) #app-shell .ui-settings-panel .ui-block-head{margin-bottom:.875rem}:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea){line-height:1.5}/* 5. 微标签：内边距收一档，与相邻标题基线对齐 */
+:where(html[data-theme="claude"]) #app-shell .ui-chip-muted{padding:.1875rem .5rem;line-height:1.35}/* 6. 日志与代码块：行距放宽到可长读的水平，时间戳保持等宽 */
+:where(html[data-theme="claude"]) #view-logs{font-variant-numeric:tabular-nums}:where(html[data-theme="claude"]) #view-logs :is(.font-mono,pre,code){line-height:1.65}:where(html[data-theme="claude"]) #view-dns :is(table,.font-mono){line-height:1.6}/* 7. 长数字与 URL：只在必要时换行，避免 mid-number 断行造成的错读 */
+:where(html[data-theme="claude"]) #app-shell .break-all{word-break:break-word}@media (max-width:767px){:where(html[data-theme="claude"]) #app-shell [class*="border-l-4"]>h3{font-size:1.5rem}:where(html[data-theme="claude"]) #app-shell .ui-settings-panel{padding:1.125rem}}/* ===== Direction A · 表格优化（表头 / 行节奏 / 长文本 / 空态）===== */
+/* 表头：一条 1px 暖灰规则收口，底色只降一档；列名提高对比度到 AA */
+:where(html[data-theme="claude"]) #view-logs thead tr,
+:where(html[data-theme="claude"]) #view-dns thead tr{border-bottom-width:0}:where(html[data-theme="claude"]) #view-logs thead th,
+:where(html[data-theme="claude"]) #view-dns thead th{color:#5e5d57;font-weight:600;padding-top:.5rem;padding-bottom:.5rem;border-bottom:1px solid var(--d1-rule-2);background:rgba(20,20,19,.028)}:where(html[data-theme="claude"]) .dark #view-logs thead th,
+:where(html[data-theme="claude"]) .dark #view-dns thead th{color:#a9a79e;border-bottom-color:#3a3a36;background:rgba(250,249,245,.04)}/* 行：等距发丝线，悬停只抬背景、不动前景色 */
+:where(html[data-theme="claude"]) #view-logs tbody tr,
+:where(html[data-theme="claude"]) #view-dns tbody tr{border-bottom:1px solid rgba(20,20,19,.075);transition:background-color .14s ease}:where(html[data-theme="claude"]) .dark #view-logs tbody tr,
+:where(html[data-theme="claude"]) .dark #view-dns tbody tr{border-bottom-color:rgba(250,249,245,.085)}:where(html[data-theme="claude"]) #view-logs tbody tr:hover,
+:where(html[data-theme="claude"]) #view-dns tbody tr:hover{background:rgba(20,20,19,.032)}:where(html[data-theme="claude"]) .dark #view-logs tbody tr:hover,
+:where(html[data-theme="claude"]) .dark #view-dns tbody tr:hover{background:rgba(250,249,245,.05)}:where(html[data-theme="claude"]) #view-logs tbody tr:last-child,
+:where(html[data-theme="claude"]) #view-dns tbody tr:last-child{border-bottom-width:0}/* 单元格：日志顶部对齐，DNS 居中；长串只在必要时断 */
+:where(html[data-theme="claude"]) #view-logs tbody td{vertical-align:top;padding-top:.5rem;padding-bottom:.5rem;overflow-wrap:anywhere}:where(html[data-theme="claude"]) #view-dns tbody td{vertical-align:middle}:where(html[data-theme="claude"]) #view-dns tbody td :is(input,select){max-width:100%}/* 空态：跨列占位行改为居中说明 */
+:where(html[data-theme="claude"]) #app-shell tbody td[colspan]{padding:2rem 1rem;text-align:center;font-family:var(--font-body);font-size:.8125rem;line-height:1.6;letter-spacing:0;color:var(--d1-muted)}:where(html[data-theme="claude"]) .dark #app-shell tbody td[colspan]{color:#8f8d84}@media (prefers-reduced-motion:reduce){:where(html[data-theme="claude"]) #view-logs tbody tr,
+:where(html[data-theme="claude"]) #view-dns tbody tr{transition:none}}/* ===== Direction A · 表格圆润化（字形 / 字距 / 行节奏）===== */
+html[data-theme="claude"]{
+  --font-table:"Nunito","MiSans","HarmonyOS Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --font-table-mono:"DM Mono","JetBrains Mono",ui-monospace,SFMono-Regular,Consolas,monospace;
+}/* 字形：表体与表头换成笔画更圆的 Nunito（拉丁/数字），中文回落到圆角优先的国产无衬线 */
+:where(html[data-theme="claude"]) #view-logs table,
+:where(html[data-theme="claude"]) #view-dns table,
+:where(html[data-theme="claude"]) #view-logs tbody td,
+:where(html[data-theme="claude"]) #view-dns tbody td,
+:where(html[data-theme="claude"]) #view-logs thead th,
+:where(html[data-theme="claude"]) #view-dns thead th{font-family:var(--font-table);letter-spacing:.012em;word-spacing:.04em}/* 等宽数据换圆润等宽（DM Mono），仍保持列对齐；不改字号 */
+:where(html[data-theme="claude"]) #view-logs table :is(.font-mono,code,pre),
+:where(html[data-theme="claude"]) #view-dns table :is(.font-mono,code,pre){font-family:var(--font-table-mono);letter-spacing:0;word-spacing:0}/* 横向：字距与词距各松半档，全大写表头不再拉宽到发硬 */
+:where(html[data-theme="claude"]) #view-logs thead th,
+:where(html[data-theme="claude"]) #view-dns thead th{font-weight:600;letter-spacing:.05em;word-spacing:.02em}/* 纵向：行高抬到 1.68/1.72，行内边距固定 10px，行与行的呼吸一致 */
+:where(html[data-theme="claude"]) #view-logs tbody td,
+:where(html[data-theme="claude"]) #view-dns tbody td{padding-top:.625rem;padding-bottom:.625rem;line-height:1.68}:where(html[data-theme="claude"]) #view-logs tbody td{line-height:1.72}/* DNS 表内的输入控件与按钮跟随表体字形，避免混排突兀 */
+:where(html[data-theme="claude"]) #view-dns tbody td :is(input,select,button){font-family:var(--font-table);letter-spacing:.01em}/* 空态说明也用表体字形（原规则在上一层的字体声明之后会被这里接住） */
+:where(html[data-theme="claude"]) #app-shell tbody td[colspan]{font-family:var(--font-table);letter-spacing:.01em}/* ===== Direction A · 表格圆润化 v2（中文也圆）===== */
+/* 上一轮只有数字变圆：Nunito / DM Mono 没有中文字形，中文一直回落到微软雅黑（方体）。
+   这里把真正带简体中文的圆润字体 LXGW WenKai Screen 挂在拉丁字体之后，只接管中文，拉丁与数字的圆润度/对齐不变。 */
+html[data-theme="claude"]{
+  --font-table:"Nunito","LXGW WenKai Screen","MiSans","HarmonyOS Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+  --font-table-mono:"DM Mono","LXGW WenKai Screen",ui-monospace,SFMono-Regular,Consolas,monospace;
+}/* 文楷只有 400：关掉合成粗体避免中文发糊，Nunito 的 500/600 仍走真字形 */
+:where(html[data-theme="claude"]) #view-logs tbody td,
+:where(html[data-theme="claude"]) #view-dns tbody td,
+:where(html[data-theme="claude"]) #view-logs thead th,
+:where(html[data-theme="claude"]) #view-dns thead th{font-synthesis-weight:none}/* 表头也走圆润字体：拉丁仍由 Nunito 接管（大写陈列），中文由文楷接管；
+   11px 小字下把字距从 .05em 收到 .04em，避免圆体在小字号被拉散 */
+:where(html[data-theme="claude"]) #view-logs thead th,
+:where(html[data-theme="claude"]) #view-dns thead th{font-family:var(--font-table);letter-spacing:.04em;word-spacing:.02em}:where(html[data-theme="claude"]) #view-dns tbody td :is(input,select,button){font-family:var(--font-body)}/* ===== Direction A · 圆润化 v3（侧栏导航 / 按钮）===== */
+/* 复用表格那套「拉丁 Nunito + 中文文楷」的字体栈，命名沿用 --font-table；
+   文楷只有 400，按钮里的 font-semibold 中文会走合成假粗，一并关掉。 */
+:where(html[data-theme="claude"]) #sidebar,
+
+:where(html[data-theme="claude"]) #app-shell :is(button,[role="button"],a[class*="btn"]){font-family:var(--font-table);font-synthesis-weight:none;letter-spacing:.01em;word-spacing:.02em}/* 侧栏导航行：圆体笔画外扩，短标签给一点点字距才不显挤 */
+:where(html[data-theme="claude"]) #sidebar :is(a,button){letter-spacing:.015em}/* 侧栏里的品牌字标与标题仍用衬线，避免整块都变成楷体 */
+:where(html[data-theme="claude"]) #sidebar :is(h1,h2,h3,h4){font-family:var(--font-display)}/* 代码、版本号、数值仍走等宽，不被圆体接管 */
+:where(html[data-theme="claude"]) #sidebar :is(.font-mono,pre,code,kbd,samp),
+
+:where(html[data-theme="claude"]) #app-shell :is(button,[role="button"]) :is(.font-mono,pre,code,kbd,samp){font-family:var(--font-mono);letter-spacing:0}/* ===== Direction A · 仪表盘可视化（卡面分层 / 图表底板 / 热力可读性）===== */
+/* 1. 卡面抬升：纸白提到 #fffdf8，配深半档的 1px 描边 + 一层中性墨影（不用彩色投影），
+      卡片才真正从 #f5f4ed 的纸面上浮起来一档，不再和页面底色黏在一起 */
+:where(html[data-theme="claude"]) #view-dashboard .glass-card{
+  background:#fffdf8 !important;
+  border-color:#e3dfd1 !important;
+  box-shadow:0 1px 2px rgba(20,20,19,.05),0 14px 30px -24px rgba(20,20,19,.42) !important;
+}:where(html[data-theme="claude"]) #view-dashboard .glass-card:hover{
+  border-color:#d5d0bd !important;
+  box-shadow:0 1px 2px rgba(20,20,19,.06),0 18px 36px -24px rgba(20,20,19,.46) !important;
+}:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card{
+  background:#272723 !important;
+  border-color:#3d3d38 !important;
+  box-shadow:inset 0 1px 0 rgba(255,253,248,.03),0 16px 32px -24px rgba(0,0,0,.7) !important;
+}:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card:hover{border-color:#4a4a45 !important}/* 2. 图表底板：趋势图原来直接画在卡面上，网格与面积填充都贴着同色底，视觉上糊成一片。
+      给 canvas 的父级做一张更亮的细边底板，折线与网格立刻有依托 */
+:where(html[data-theme="claude"]) #view-dashboard div:has(>#trafficChart){
+  background:#fffefb;
+  border:1px solid #efece0;
+  border-radius:12px;
+  padding:14px 12px 6px;
+}:where(html[data-theme="claude"]) .dark #view-dashboard div:has(>#trafficChart){background:#1c1c19;border-color:#3a3a36}/* 3. 热力图：低值格原来只有 8% 陶土，在暖纸上几乎看不见。
+      把数据映射的透明度整体放大（数据仍按原比例编码，只抬高可见下限），
+      圆角从 10px 收到 7px，边界更利落；空格改成斜纹，明确区分「无数据」与「低值」 */
+:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell{
+  border-radius:7px;
+  border-color:rgba(180,85,58,.3);
+  background:rgba(201,100,66,min(1,calc(var(--d1-heat-alpha,.08) * 1.8)));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.45);
+}:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-active:hover{
+  transform:translateY(-1px);
+  border-color:rgba(180,85,58,.62);
+  box-shadow:0 8px 18px -8px rgba(180,85,58,.42);
+}:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-empty{
+  border-style:dashed;
+  border-color:#e0ddd0;
+  background:repeating-linear-gradient(135deg,rgba(20,20,19,.055) 0 2px,transparent 2px 5px);
+  box-shadow:none;
+}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell{
+  border-color:rgba(217,119,87,.32);
+  background:rgba(217,119,87,min(1,calc(var(--d1-heat-alpha,.12) * 1.7)));
+  box-shadow:inset 0 1px 0 rgba(255,253,248,.05);
+}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-active:hover{border-color:rgba(224,164,140,.66)}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-empty{
+  border-color:#3a3a36;
+  background:repeating-linear-gradient(135deg,rgba(255,253,248,.07) 0 2px,transparent 2px 5px);
+}/* 轴标签：11px 下的 #87867f 只有约 3.4:1，扫读时最先糊掉 */
+:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-col-label{color:#6b6a63}:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-row-label{color:#3d3d3a}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-col-label{color:#a9a79e}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-row-label{color:#d1cfc5}/* 图表下方的 12px 说明文字同步提一档对比度 */
+:where(html[data-theme="claude"]) #view-dashboard .text-slate-500{color:#5e5d5a !important}:where(html[data-theme="claude"]) .dark #view-dashboard .text-slate-500{color:#a9a79e !important}/* ===== Direction A · 对比度 v2（仪表盘：卡面边界 / 次要文字 / 图表 / 热力图）===== */
+/* 1. 卡面：描边再深一档、墨影收紧，卡片边界不再依赖明度差 */
+:where(html[data-theme="claude"]) #view-dashboard .glass-card{
+  border-color:#d3ccb6 !important;
+  box-shadow:0 1px 2px rgba(20,20,19,.06),0 16px 30px -22px rgba(20,20,19,.44) !important;
+}:where(html[data-theme="claude"]) #view-dashboard .glass-card:hover{
+  border-color:#c3bba1 !important;
+  box-shadow:0 1px 2px rgba(20,20,19,.07),0 20px 34px -22px rgba(20,20,19,.48) !important;
+}:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card{
+  border-color:#4a4a44 !important;
+  box-shadow:inset 0 1px 0 rgba(255,253,248,.04),0 16px 30px -22px rgba(0,0,0,.66) !important;
+}:where(html[data-theme="claude"]) .dark #view-dashboard .glass-card:hover{border-color:#5c5c54 !important}/* 2. 图表底板：比卡面更亮 + 更实的描边，图表区自成一块 */
+:where(html[data-theme="claude"]) #view-dashboard div:has(>#trafficChart){
+  background:#ffffff;
+  border-color:#ddd6c2;
+  box-shadow:inset 0 0 0 1px rgba(20,20,19,.02);
+}:where(html[data-theme="claude"]) .dark #view-dashboard div:has(>#trafficChart){background:#141412;border-color:#4a4a44}/* 3. 次要文字：仪表盘里的 slate-300/400/500/600 逐级提深到 AA 以上 */
+:where(html[data-theme="claude"]) #view-dashboard :is(.text-slate-300,.text-slate-400){color:#6b6a62 !important}:where(html[data-theme="claude"]) #view-dashboard .text-slate-500{color:#4f4e48 !important}:where(html[data-theme="claude"]) #view-dashboard .text-slate-600{color:#3d3c37 !important}:where(html[data-theme="claude"]) .dark #view-dashboard :is(.text-slate-300,.text-slate-400){color:#bab8ad !important}:where(html[data-theme="claude"]) .dark #view-dashboard .text-slate-500{color:#c2c0b5 !important}:where(html[data-theme="claude"]) .dark #view-dashboard .text-slate-600{color:#cfcdc2 !important}:where(html[data-theme="claude"]) #view-dashboard .ui-section-kicker{color:#514f49}:where(html[data-theme="claude"]) .dark #view-dashboard .ui-section-kicker{color:#bab8ad}/* 统计卡标签与注释：原 #87867f（约 3.6:1）在纸白上偏淡 */
+:where(html[data-theme="claude"]) #view-dashboard [class*="border-l-4"]>p:first-child{color:#54534c !important}:where(html[data-theme="claude"]) #view-dashboard [class*="border-l-4"]>p:last-child{color:#5e5d55 !important}:where(html[data-theme="claude"]) .dark #view-dashboard [class*="border-l-4"]>p:first-child{color:#bcbaaf !important}:where(html[data-theme="claude"]) .dark #view-dashboard [class*="border-l-4"]>p:last-child{color:#aba99f !important}/* 4. 热力图：低值格设 16% 可见下限（数据仍按原比例编码），边界更实 */
+:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell{
+  border-color:rgba(176,80,53,.46);
+  background:rgba(201,100,66,min(1,max(.16,calc(var(--d1-heat-alpha,.08) * 1.9))));
+}:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-active:hover{
+  border-color:rgba(150,64,40,.8);
+  box-shadow:0 10px 20px -8px rgba(150,64,40,.5);
+}:where(html[data-theme="claude"]) #view-dashboard .d1-heat-cell.is-empty{
+  border-color:#c9c2ac;
+  background:repeating-linear-gradient(135deg,rgba(20,20,19,.1) 0 2px,transparent 2px 5px);
+}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell{
+  border-color:rgba(217,119,87,.5);
+  background:rgba(217,119,87,min(1,max(.2,calc(var(--d1-heat-alpha,.12) * 1.8))));
+}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-active:hover{border-color:rgba(230,175,152,.85)}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heat-cell.is-empty{
+  border-color:#55554e;
+  background:repeating-linear-gradient(135deg,rgba(255,253,248,.12) 0 2px,transparent 2px 5px);
+}/* 5. 热力图轴标签：11px 下的下限再提一档 */
+:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-col-label{color:#54534c}:where(html[data-theme="claude"]) #view-dashboard .d1-heatmap-row-label{color:#2f2e2a}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-col-label{color:#b6b4a9}:where(html[data-theme="claude"]) .dark #view-dashboard .d1-heatmap-row-label{color:#dcdad0}/* ===== 按钮统一：扁平 · 复古工具 UI =====
+   一套控件语言：8px 方角、零投影、零渐变，层级只靠 1px 描边 + 底色差；
+   实心主按钮用 1px 内描边代替光晕，按下时整体下沉 1px，像按下一枚工具键。 */
+html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude"]) #app-shell button,
+
+:where(html[data-theme="claude"]) #app-shell a[class*="btn"],
+
+:where(html[data-theme="claude"]) #app-shell label[class*="btn"],
+
+:where(html[data-theme="claude"]) #app-shell label[class*="border-slate-"],
+
+:where(html[data-theme="claude"]) #app-shell [role="tab"]{
+  border-radius:var(--d1-control-radius) !important;
+  box-shadow:none !important;
+  background-image:none !important;
+  text-shadow:none !important;
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+}/* 与按钮同排的字段/搜索框用同一方角，避免一行里两种圆角打架 */
+:where(html[data-theme="claude"]) #app-shell :is(input,select,textarea).rounded-control,
+
+:where(html[data-theme="claude"]) #view-nodes .node-toolbar-search,
+
+:where(html[data-theme="claude"]) #view-logs .rounded-control,
+
+:where(html[data-theme="claude"]) #view-dns .rounded-control{border-radius:var(--d1-control-radius) !important}:where(html[data-theme="claude"]) #app-shell button:hover,
+
+:where(html[data-theme="claude"]) #app-shell a[class*="btn"]:hover,
+
+:where(html[data-theme="claude"]) #app-shell label[class*="btn"]:hover,
+
+:where(html[data-theme="claude"]) #app-shell label[class*="border-slate-"]:hover,
+
+:where(html[data-theme="claude"]) #app-shell [role="tab"]:hover{box-shadow:none !important}/* 实心主按钮：1px 内描边替代投影，边缘依然清晰但不发光 */
+:where(html[data-theme="claude"]) #view-nodes .node-toolbar-primary-btn,
+
+:where(html[data-theme="claude"]) #view-nodes .node-toolbar-primary-btn:hover,
+
+:where(html[data-theme="claude"]) #node-modal .node-modal-primary-btn,
+
+:where(html[data-theme="claude"]) #node-modal .node-modal-primary-btn:hover,
+
+:where(html[data-theme="claude"]) #view-settings .set-tab[aria-selected="true"],
+
+:where(html[data-theme="claude"]) [data-ui-dialog-surface="1"] [class*="bg-brand-"],
+
+:where(html[data-theme="claude"]) [data-ui-dialog-surface="1"] [class*="bg-red-600"]{box-shadow:inset 0 0 0 1px rgba(20,20,19,.18) !important}:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn,
+
+:where(html[data-theme="claude"]) .dark #view-nodes .node-toolbar-primary-btn:hover,
+
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn,
+
+:where(html[data-theme="claude"]) .dark #node-modal .node-modal-primary-btn:hover,
+
+:where(html[data-theme="claude"]) .dark #view-settings .set-tab[aria-selected="true"],
+
+:where(html[data-theme="claude"]) .dark [data-ui-dialog-surface="1"] [class*="bg-brand-"],
+
+:where(html[data-theme="claude"]) .dark [data-ui-dialog-surface="1"] [class*="bg-red-600"]{box-shadow:inset 0 0 0 1px rgba(250,249,245,.16) !important}/* 按下 = 下沉 1px（排除绝对定位按钮，避免位移错位） */
+:where(html[data-theme="claude"]) #app-shell button:not([class*="absolute"]):active{transform:translateY(1px)}:where(html[data-theme="claude"]) #app-shell [role="tab"]:active{transform:none}/* ===== 设置页控件：并入同一套扁平工具 UI =====
+   设置页自带的控件层把输入框留在 12–16px 圆角与轻投影上，与按钮的 8px 方角打架；
+   这里只收敛 #view-settings 内的表单控件与可点标签，不动其他视图与面板圆角。 */
+:where(html[data-theme="claude"]) #view-settings :is(input,select,textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]){
+  border-radius:var(--d1-control-radius) !important;
+  box-shadow:none !important;
+  background-image:none !important;
+}/* 投影统一归零后，焦点改用外描边环，避免键盘操作失去可见焦点 */
+:where(html[data-theme="claude"]) #view-settings :is(input,select,textarea):focus-visible{outline:2px solid #c96442;outline-offset:1px}:where(html[data-theme="claude"]) #view-settings :is(input[type="checkbox"],input[type="radio"]){accent-color:#c96442;box-shadow:none !important}:where(html[data-theme="claude"]) #view-settings :is([role="button"],label[class*="rounded-control"],.settings-secondary-label){
+  border-radius:var(--d1-control-radius) !important;
+  box-shadow:none !important;
+  background-image:none !important;
+}:where(html[data-theme="claude"]) #view-settings :is([role="button"],label[class*="rounded-control"]):active{transform:translateY(1px)}:where(html[data-theme="claude"]) #view-settings button:disabled{transform:none !important}/* 选项卡 / 分段标签：没带 rounded-control、只靠 border-slate / bg-slate / border-brand
+   拼出来的可点卡片，同样并入 8px 方角与零投影，避免和同排按钮两种圆角 */
+:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"],[class*="border-brand-"],[class*="bg-brand-"]){
+  border-radius:var(--d1-control-radius) !important;
+  box-shadow:none !important;
+  background-image:none !important;
+}:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"],[class*="border-brand-"]):focus-visible{outline:2px solid #c96442;outline-offset:1px}:where(html[data-theme="claude"]) #view-settings :is(label,a):is([class*="border-slate-200"],[class*="border-slate-300"],[class*="bg-slate-200"]):active{transform:translateY(1px)}/* 缓存区的危险操作键（Purge）：实心砖红的老式工具键——8px 方角、零投影零渐变、
+   1px 深色内描边，悬停只加深不发光，按下沉 1px。按 id 定形，不依赖 class 串，
+   作用域只到这一个按钮，不会波及其他页面的红描边键。 */
+:where(html[data-theme="claude"]) #app-shell #purge-cache-btn{
+  border:1px solid #8f2b21 !important;
+  border-radius:var(--d1-control-radius) !important;
+  background-color:#b23a2c !important;
+  background-image:none !important;
+  box-shadow:inset 0 0 0 1px rgba(20,20,19,.16) !important;
+  color:#fbf9f4 !important;
+  font-weight:600;
+  letter-spacing:.01em;
+  text-shadow:none !important;
+  transition:background-color .12s ease,border-color .12s ease,color .12s ease;
+}:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:hover{
+  background-color:#9c3125 !important;
+  border-color:#7a251d !important;
+  color:#ffffff !important;
+  box-shadow:inset 0 0 0 1px rgba(20,20,19,.2) !important;
+}:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:active{
+  transform:translateY(1px);
+  background-color:#8a2b20 !important;
+  border-color:#6d211a !important;
+}:where(html[data-theme="claude"]) #app-shell #purge-cache-btn:focus-visible{outline:2px solid #c96442;outline-offset:2px}:where(html[data-theme="claude"]) .dark #app-shell #purge-cache-btn{
+  background-color:#8f2b21 !important;
+  border-color:#b5453a !important;
+  color:#fdf2ee !important;
+}:where(html[data-theme="claude"]) .dark #app-shell #purge-cache-btn:hover{
+  background-color:#a3342a !important;
+  border-color:#c9554a !important;
+  color:#ffffff !important;
+}/* 管理页上传控件（index.html / worker.js）：并入同一套扁平复古工具键——8px 方角、
+   零投影零渐变，选择键用 1px 描边定形，悬停只加深不发光，按下沉 1px。 */
+:where(html[data-theme="claude"]) [data-admin-index-file-input="1"],
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]{
+  border-radius:var(--d1-control-radius);
+  box-shadow:none;
+  background-image:none;
+  color:#2f2e2a;
+  font-size:13px;
+  line-height:1.2;
+  padding:0;
+  max-width:100%;
+}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button,
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button{
+  margin:0 10px 0 0;
+  padding:5px 12px;
+  border:1px solid rgba(20,20,19,.24);
+  border-radius:var(--d1-control-radius);
+  background-color:transparent;
+  background-image:none;
+  box-shadow:none;
+  color:#2f2e2a;
+  font:inherit;
+  font-weight:600;
+  letter-spacing:.01em;
+  cursor:pointer;
+  transition:background-color .12s ease,border-color .12s ease,color .12s ease;
+}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:hover,
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:hover{
+  background-color:rgba(20,20,19,.06);
+  border-color:rgba(20,20,19,.42);
+  color:#141413;
+  box-shadow:none;
+}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:active,
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:active{
+  transform:translateY(1px);
+  background-color:rgba(20,20,19,.1);
+  border-color:rgba(20,20,19,.5);
+}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]:focus-visible,
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]:focus-visible{outline:2px solid #c96442;outline-offset:2px}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"],
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]{color:#dcdad0}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button,
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button{
+  border-color:rgba(250,249,245,.26);
+  color:#e8e6dc;
+}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:hover,
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:hover{
+  background-color:rgba(250,249,245,.1);
+  border-color:rgba(250,249,245,.46);
+  color:#faf9f5;
+}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:active,
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:active{
+  background-color:rgba(250,249,245,.16);
+}/* 设置页操作行 · 扁平胶囊主操作（保存 + 其右侧的恢复推荐值） */
+:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"],
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]{
+  border:0 !important;
+  border-radius:999px !important;
+  background-image:none !important;
+  box-shadow:none !important;
+  color:#fff !important;
+  font-weight:400 !important;
+  padding:9px 22px !important;
+  min-height:40px;
+  letter-spacing:.01em;
+  transition:background-color .12s ease,color .12s ease;
+}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]{background-color:#b3502f !important}:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]{background-color:#8e3a22 !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:hover{background-color:#9b4326 !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:hover{background-color:#7a301b !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:active,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:active{background-color:#83381f !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:focus-visible,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:focus-visible{outline:2px solid #e3a98f;outline-offset:2px}:where(html[data-theme="claude"]) #view-settings button[class*="bg-brand-600"]:disabled,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-emerald-200"]:disabled{opacity:.55;color:#fff !important}/* 审计修复 · 次要操作（导入备份 / 发送测试通知）→ 扁平实底胶囊 */
+:where(html[data-theme="claude"]) #view-settings .settings-secondary-label,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"],
+
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-blue-200"][class*="text-blue-600"]{
+  border:0 !important;border-radius:999px !important;background-image:none !important;box-shadow:none !important;
+  background-color:#8e3a22 !important;color:#fff !important;font-weight:400 !important;
+  padding:9px 22px !important;min-height:40px;letter-spacing:.01em;
+  transition:background-color .12s ease,color .12s ease}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label{background-color:#a3452a !important;border:0 !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:hover,
+
+:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:hover,
+
+:where(html[data-theme="claude"]) .dark #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:hover{background-color:#7a301b !important;color:#fff !important;border:0 !important}:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover{background-color:#b3502f !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:active,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:active{background-color:#83381f !important;color:#fff !important}:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:focus-visible,
+
+:where(html[data-theme="claude"]) #view-settings button[class*="border-blue-200"][class*="text-blue-600"]:focus-visible{outline:2px solid #e3a98f;outline-offset:2px}/* 审计修复 · 文件选择键 → 同一扁平胶囊语言（去掉描边幽灵形态） */
+:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button,
+
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button{
+  border:0 !important;border-radius:999px !important;background-image:none !important;box-shadow:none !important;
+  background-color:#8e3a22 !important;color:#fff !important;font-weight:400 !important;
+  padding:8px 20px !important;letter-spacing:.01em;cursor:pointer}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:hover,
+
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:hover{background-color:#7a301b !important;color:#fff !important}:where(html[data-theme="claude"]) [data-admin-index-file-input="1"]::file-selector-button:active,
+
+:where(html[data-theme="claude"]) [data-admin-worker-file-input="1"]::file-selector-button:active{background-color:#83381f !important;transform:none}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button,
+
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button{background-color:#a3452a !important;border:0 !important;color:#fff !important}:where(html[data-theme="claude"]) .dark [data-admin-index-file-input="1"]::file-selector-button:hover,
+
+:where(html[data-theme="claude"]) .dark [data-admin-worker-file-input="1"]::file-selector-button:hover{background-color:#b3502f !important;color:#fff !important}/* 设置页其余「导入备份」类次要按钮（不同 class 变体）一并并入胶囊语言 */
+:where(html[data-theme="claude"]) #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label),
+
+:where(html[data-theme="claude"]) .dark #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label){
+  border:0 !important;border-radius:999px !important;background-image:none !important;box-shadow:none !important;
+  background-color:#8e3a22 !important;color:#fff !important;font-weight:400 !important;
+  padding:9px 22px !important;min-height:40px;letter-spacing:.01em}:where(html[data-theme="claude"]) #view-settings label[class*="settings-secondary"]:not(.settings-secondary-label):hover{background-color:#7a301b !important;color:#fff !important}/* ===== 设置页左侧导航 · 与「全局设置」「UI 圆角弧度」同一套标题宋体（图2 / 图4）=====
+   直接复用设计令牌 --font-display（Noto Serif SC → 宋体 / SimSun → Georgia），
+   不再单独造圆体栈：图2、图4 就是页面里已有的标题字，导航对齐它们即可。 */
+:where(html[data-theme="claude"]) #view-settings .settings-nav-shell [role="tab"],
+
+:where(html[data-theme="claude"]) #view-settings .set-tab{
+  font-family:var(--font-display) !important;
+  font-size:14px !important;
+  line-height:1.4 !important;
+  font-weight:400 !important;
+  letter-spacing:.01em !important;
+  padding:9.5px 14px !important;
+  min-height:41px;
+  text-shadow:none !important;
+}:where(html[data-theme="claude"]) #view-settings .settings-nav-shell [role="tab"] .block,
+
+:where(html[data-theme="claude"]) #view-settings .set-tab .block{
+  font-family:inherit !important;
+  font-size:inherit !important;
+  font-weight:400 !important;
+  letter-spacing:.01em !important;
+  line-height:1.4 !important;
+}/* 选中项用更重的衬线字重（图4 的粗宋），未选中保持图2 的常规宋 */
+:where(html[data-theme="claude"]) #view-settings .settings-nav-shell [role="tab"][aria-selected="true"] .block,
+
+:where(html[data-theme="claude"]) #view-settings .set-tab[aria-selected="true"] .block{font-weight:700 !important}/* 面板标题「全局设置导航」：与 .ui-section-title（调度时区等面板标题）同字号同字族；SETTINGS 眉标不动 */
+:where(html[data-theme="claude"]) #view-settings .settings-nav-shell > div > div.text-\\[13px\\]{
+  font-family:var(--font-display) !important;
+  font-size:1.0625rem !important;
+  line-height:1.5rem !important;
+  font-weight:700 !important;
+  letter-spacing:.01em !important;
+}
+:where(html[data-theme="claude"]) #app-shell [data-admin-brand-shell="1"]{min-width:0;padding-inline:1.25rem}
+:where(html[data-theme="claude"]) #app-shell [data-admin-brand-mark="1"]{flex:0 0 auto}
+:where(html[data-theme="claude"]) #app-shell [data-admin-brand-title="1"]{margin-left:.75rem;min-width:0;font-size:1.0625rem;line-height:1.5rem;letter-spacing:-.01em;white-space:nowrap;overflow:hidden}
+:where(html[data-theme="claude"]) #app-shell [data-admin-brand-title="1"]>span{flex:0 0 auto;white-space:nowrap}
+#view-settings .settings-theme-skin-card [data-admin-skin-option]{transition:background-color .16s ease,border-color .16s ease,color .16s ease}
+#view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#bfdbfe;background:#eff6ff;color:#1d4ed8}
+.dark #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#3b82f6;background:rgba(59,130,246,.14);color:#bfdbfe}
+/* 侧栏收起/展开：文字随宽度裁切并淡出，而不是瞬间消失（所有皮肤一致） */
+#sidebar [data-admin-brand-title="1"]{min-width:0;white-space:nowrap;overflow:hidden}
+#sidebar [data-admin-brand-title="1"]>span{flex:0 0 auto;white-space:nowrap}
+#sidebar .nav-item>span{white-space:nowrap}
+@media (min-width:768px){
+#sidebar [data-admin-brand-title="1"],
+#sidebar .nav-item>span{transition:display .24s allow-discrete,opacity .18s ease}
+#sidebar[class*="5.5rem"] [data-admin-brand-title="1"],
+#sidebar[class*="5.5rem"] .nav-item>span{opacity:0}
+}
+@media (prefers-reduced-motion:reduce){
+#sidebar [data-admin-brand-title="1"],
+#sidebar .nav-item>span{transition:none}
+}
+/* 设置导航尺寸对齐主题B：面板内边距 / 页签高度与字号 / 导航标题字号（所有皮肤） */
+#view-settings .settings-nav-shell{padding:1.375rem}
+#view-settings .settings-nav-shell [role="tab"],
+#view-settings .set-tab{font-size:14px;line-height:1.4;padding:9.5px 14px;min-height:41px}
+#view-settings .settings-nav-shell [role="tab"] .block,
+#view-settings .set-tab .block{font-size:inherit;line-height:1.4}
+#view-settings .settings-nav-shell>div:first-child>div:last-child{font-size:1rem;line-height:1.5rem}
 </style>`;
 const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancements="1">
 (() => {
@@ -197,6 +695,103 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     : (callback) => window.setTimeout(callback, 16);
   const brandIconSvg = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.25 5.75h9.5" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/><path d="M7.25 12h6.75" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/><path d="M7.25 18.25h9.5" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/><path d="M7.25 5.75v12.5" stroke="currentColor" stroke-width="2.15" stroke-linecap="round"/></svg>';
   const wikiTutorialUrl = 'https://wiki.8081666.xyz/新手教程';
+
+  const UI_SKIN_STORAGE_KEY = 'adminUiSkin';
+  const UI_SKIN_CLASSIC = 'classic';
+  const UI_SKIN_CLAUDE = 'claude';
+  const UI_SKIN_OPTION_BASE = 'px-4 py-2 rounded-control border text-sm font-medium';
+  const UI_SKIN_OPTION_ON =
+    'border-brand-300 bg-brand-50 text-brand-700 dark:border-slate-600 dark:bg-slate-800 dark:text-white';
+  const UI_SKIN_OPTION_OFF =
+    'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:bg-slate-800 dark:hover:text-white';
+  const UI_SKIN_FONT_LINKS = [
+    { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+    { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossOrigin: 'anonymous' },
+    {
+      rel: 'stylesheet',
+      href: 'https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;600;700&family=JetBrains+Mono:wght@400;500&family=Nunito:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap'
+    },
+    { rel: 'stylesheet', href: 'https://unpkg.com/lxgw-wenkai-screen-webfont@1.7.0/style.css' }
+  ];
+
+  function readStoredUiSkin() {
+    try {
+      return localStorage.getItem(UI_SKIN_STORAGE_KEY) === UI_SKIN_CLAUDE
+        ? UI_SKIN_CLAUDE
+        : UI_SKIN_CLASSIC;
+    } catch {
+      return UI_SKIN_CLASSIC;
+    }
+  }
+
+  function ensureUiSkinFonts() {
+    if (typeof document?.createElement !== 'function' || !document?.head) return;
+    if (document.head.querySelector('link[data-admin-skin-font="1"]')) return;
+    for (const item of UI_SKIN_FONT_LINKS) {
+      const link = document.createElement('link');
+      link.setAttribute('data-admin-skin-font', '1');
+      link.rel = item.rel;
+      link.href = item.href;
+      if (item.crossOrigin) link.crossOrigin = item.crossOrigin;
+      document.head.appendChild(link);
+    }
+  }
+
+  function applyUiSkin(skin, options = {}) {
+    const next = skin === UI_SKIN_CLAUDE ? UI_SKIN_CLAUDE : UI_SKIN_CLASSIC;
+    if (next === UI_SKIN_CLAUDE) ensureUiSkinFonts();
+    document?.documentElement?.setAttribute?.('data-theme', next);
+    if (options.persist) {
+      try {
+        localStorage.setItem(UI_SKIN_STORAGE_KEY, next);
+      } catch {}
+    }
+    return next;
+  }
+
+  function resolveCurrentUiSkin(app = window.App) {
+    if (app?.uiSkin === UI_SKIN_CLAUDE) return UI_SKIN_CLAUDE;
+    if (document?.documentElement?.getAttribute?.('data-theme') === UI_SKIN_CLAUDE)
+      return UI_SKIN_CLAUDE;
+    return readStoredUiSkin();
+  }
+
+  function syncThemeSkinPanel(app = window.App) {
+    const root = document?.getElementById?.('admin-theme-skin-root');
+    if (!root) return;
+    if (!root.dataset.adminThemeSkinReady) {
+      root.dataset.adminThemeSkinReady = '1';
+      root.innerHTML =
+        '<div class="ui-block-head"><div><div class="ui-section-kicker">Theme</div><div class="ui-section-title">\u754c\u9762\u4e3b\u9898</div></div><span class="ui-chip-muted">\u4ec5\u672c\u673a</span></div>' +
+        '<p class="text-xs text-slate-500 mb-3 ml-6">\u5207\u6362\u7ba1\u7406\u754c\u9762\u7684\u89c6\u89c9\u4e3b\u9898\uff0c\u4ec5\u5f71\u54cd\u5f53\u524d\u6d4f\u89c8\u5668\uff0c\u4e0d\u4fee\u6539 Worker \u914d\u7f6e\u3002</p>' +
+        '<div class="ml-6 flex flex-wrap gap-2" role="group" aria-label="\u754c\u9762\u4e3b\u9898">' +
+        '<button type="button" data-admin-skin-option="classic">\u7ecf\u5178\u84dd</button>' +
+        '<button type="button" data-admin-skin-option="claude">\u6696\u7eb8</button>' +
+        '</div>';
+      root.querySelectorAll('[data-admin-skin-option]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const next = button.getAttribute('data-admin-skin-option');
+          applyUiSkin(next);
+          if (typeof app?.setUiSkin === 'function') app.setUiSkin(next);
+          else applyUiSkin(next, { persist: true });
+          syncThemeSkinPanel(app);
+        });
+      });
+    }
+    const active = resolveCurrentUiSkin(app);
+    root.querySelectorAll('[data-admin-skin-option]').forEach((button) => {
+      const isActive = button.getAttribute('data-admin-skin-option') === active;
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      button.className = UI_SKIN_OPTION_BASE + ' ' + (isActive ? UI_SKIN_OPTION_ON : UI_SKIN_OPTION_OFF);
+    });
+  }
+
+  try {
+    applyUiSkin(readStoredUiSkin());
+  } catch (error) {
+    console.error('ui skin init failed', error);
+  }
+
   const shellHookSelector = '[data-admin-toolbar-group="title"],[data-admin-toolbar-group="actions"],[data-admin-page-title="1"],[data-admin-brand-shell="1"],[data-admin-brand-title="1"],[data-admin-brand-mark="1"],#view-dashboard,#view-nodes,#view-logs,#view-settings,#node-modal';
   let iconFrameId = 0;
   let shellFrameId = 0;
@@ -370,6 +965,12 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (node.matches?.(shellHookSelector)) return true;
     if (node.closest?.(shellHookSelector)) return true;
     return !!node.querySelector?.(shellHookSelector);
+  }
+
+  function touchesDialogLayer(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    if (node.matches?.('[data-ui-backdrop], [data-ui-dialog-surface]')) return true;
+    return !!node.querySelector?.('[data-ui-backdrop], [data-ui-dialog-surface]');
   }
 
   function getToolbarNodes() {
@@ -643,6 +1244,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
 
   function applySettingsLayout() {
     syncWorkerHtmlUpdatePanel(window.App);
+    syncThemeSkinPanel(window.App);
   }
 
   function applyNodeAdvancedSettingsLayout() {
@@ -1284,6 +1886,31 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     return details.join(' · ');
   }
 
+  const UI_REQUEST_TIMEOUT_MS = 60000;
+  // 上传类请求跳过超时：中断提示无法证明服务端没写入，重试可能重复部署。
+  const UI_REQUEST_NO_TIMEOUT_ACTIONS = new Set(['updateWorkerAndAdminIndex', 'uploadAdminIndex']);
+
+  function withUiRequestTimeout(app, action, task, timeoutMs = UI_REQUEST_TIMEOUT_MS) {
+    if (UI_REQUEST_NO_TIMEOUT_ACTIONS.has(action)) return task;
+    let timer = 0;
+    const timeout = new Promise((_, reject) => {
+      const arm = () => {
+        timer = window.setTimeout(() => {
+          // 重新登录期间请求被有意挂起，不算超时。
+          if (app?.promptDialog?.open) {
+            arm();
+            return;
+          }
+          const error = new Error('请求超时，操作可能仍在后台执行；请刷新页面确认结果，避免重复提交。');
+          error.code = 'UI_REQUEST_TIMEOUT';
+          reject(error);
+        }, timeoutMs);
+      };
+      arm();
+    });
+    return Promise.race([task, timeout]).finally(() => window.clearTimeout(timer));
+  }
+
   function patchSafetyContractMethods(app) {
     if (!app || patchedSafetyContractApp === app) return;
     patchedSafetyContractApp = app;
@@ -1301,7 +1928,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
 		}
 		let result;
 		try {
-			result = await originalApiCall(action, requestPayload);
+			result = await withUiRequestTimeout(app, normalizedAction, originalApiCall(action, requestPayload));
 		} catch (error) {
 			if (normalizedAction === 'saveConfig' && String(error?.code || '').toUpperCase() === 'CONFIG_REVISION_CONFLICT') {
 				error.message = '配置版本已变化，请刷新设置确认差异后重新提交；当前编辑内容已保留。';
@@ -1988,6 +2615,55 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     syncPlaybackInfoModeCopy();
   }
 
+  let dialogTitleSeq = 0;
+
+  // 弹层是自绘 div，这里补上原生 dialog 的语义、焦点和 Esc 关闭。
+  function syncDialogAccessibility() {
+    const surfaces = Array.prototype.slice.call(
+      document.querySelectorAll?.('[data-ui-backdrop] [data-ui-dialog-surface]') || []
+    );
+    // 弹层是 #app-shell 的子节点，不能给 shell 加 inert（会连弹层一起失效）。
+    for (const surface of surfaces) {
+      if (!surface?.dataset || surface.dataset.adminDialogA11y === '1') continue;
+      surface.dataset.adminDialogA11y = '1';
+      surface.setAttribute('role', 'dialog');
+      surface.setAttribute('aria-modal', 'true');
+      const title = surface.querySelector('h3');
+      if (title) {
+        if (!title.id) {
+          dialogTitleSeq += 1;
+          title.id = 'admin-dialog-title-' + dialogTitleSeq;
+        }
+        surface.setAttribute('aria-labelledby', title.id);
+      }
+      const active = document.activeElement;
+      if (active && surface.contains?.(active)) continue;
+      const target =
+        surface.querySelector('input:not([type="hidden"]), textarea, select') ||
+        surface.querySelector('button:last-of-type');
+      try {
+        target?.focus?.({ preventScroll: true });
+      } catch (error) {
+        console.error('apply dialog focus failed', error);
+      }
+    }
+  }
+
+  function handleDialogEscapeKey(event) {
+    if (!event || event.key !== 'Escape' || event.defaultPrevented) return;
+    const backdrops = Array.prototype.slice
+      .call(document.querySelectorAll?.('[data-ui-backdrop]') || [])
+      .filter((node) => node?.querySelector?.('[data-ui-dialog-surface]'));
+    if (backdrops.length === 0) return;
+    // 弹层按 z-index 递增顺序渲染，最后一个就是最上层。
+    const top = backdrops[backdrops.length - 1];
+    event.preventDefault?.();
+    top.click?.();
+  }
+
+  document.addEventListener?.('keydown', handleDialogEscapeKey);
+  syncDialogAccessibility();
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       scheduleIconRefresh(document.body);
@@ -2007,6 +2683,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     const observer = new MutationObserver((records) => {
       let shouldRefreshIcons = false;
       let shouldRefreshShell = false;
+      let shouldSyncDialogs = false;
       for (const record of records) {
         if (record.type === 'attributes') {
           if (containsLucidePlaceholder(record.target)) shouldRefreshIcons = true;
@@ -2019,10 +2696,16 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
           if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
           if (containsLucidePlaceholder(node)) shouldRefreshIcons = true;
           if (touchesShellHooks(node)) shouldRefreshShell = true;
+          if (touchesDialogLayer(node)) shouldSyncDialogs = true;
+        }
+        for (const node of record.removedNodes) {
+          if (!node || node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (touchesDialogLayer(node)) shouldSyncDialogs = true;
         }
       }
       if (shouldRefreshIcons) scheduleIconRefresh(document.body);
       if (shouldRefreshShell) scheduleShellRefresh();
+      if (shouldSyncDialogs) syncDialogAccessibility();
     });
 
     const observe = () => {
