@@ -17,3 +17,6 @@ banker/
 frontend/.admin-runtime-sync.json
 logs-*.json
 trace-*.json
+
+# 管理端是单文件交付，dist 只跟踪 index.html；历史打包残留不得进仓库
+frontend/dist/.vite/

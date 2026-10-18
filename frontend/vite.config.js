@@ -4,18 +4,6 @@ import tailwindcss from "@tailwindcss/vite";
 import vue from "@vitejs/plugin-vue";
 import { defineConfig, loadEnv } from "vite";
 
-function normalizeBase(rawValue = "") {
-  const value = String(rawValue || "").trim();
-  if (!value) return "/";
-
-  if (/^https?:\/\//i.test(value)) {
-    return value.endsWith("/") ? value : `${value}/`;
-  }
-
-  const normalized = value.startsWith("/") ? value : `/${value}`;
-  return normalized.endsWith("/") ? normalized : `${normalized}/`;
-}
-
 function normalizeRoutePath(rawValue = "/admin") {
   const value = String(rawValue || "").trim();
   if (!value) return "/admin";
@@ -86,18 +74,6 @@ function createDevProxyRule(target) {
   };
 }
 
-function createManualChunks() {
-  return function manualChunks(id) {
-    if (id.includes("node_modules/chart.js")) return "vendor-chart";
-    if (id.includes("node_modules/lucide-vue-next")) return "vendor-icons";
-    if (id.includes("node_modules/vue")) return "vendor-vue";
-
-    if (id.includes("/src/features/overview/")) return "feature-overview";
-    if (id.includes("/src/features/release/")) return "feature-release";
-    return null;
-  };
-}
-
 function createDevProxy(env) {
   const adminPath = normalizeRoutePath(env.VITE_ADMIN_PATH || "/admin");
   const target = normalizeProxyTarget(env.VITE_DEV_PROXY_TARGET || env.VITE_API_BASE_URL);
@@ -112,7 +88,6 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
   return {
-    base: normalizeBase(env.VITE_CDN_BASE_URL),
     // 依赖已提升到根 node_modules：缓存默认跟着最近的 package.json 落在 frontend/node_modules，
     // 会把“仓库里不该有 frontend/node_modules”这条事实破坏掉，所以显式指到根目录。
     cacheDir: fileURLToPath(new URL("../node_modules/.vite", import.meta.url)),
@@ -133,17 +108,6 @@ export default defineConfig(({ mode }) => {
     preview: {
       host: "0.0.0.0",
       port: 4173,
-    },
-    build: {
-      target: "es2022",
-      manifest: true,
-      sourcemap: true,
-      cssCodeSplit: true,
-      rolldownOptions: {
-        output: {
-          manualChunks: createManualChunks(),
-        },
-      },
     },
   };
 });

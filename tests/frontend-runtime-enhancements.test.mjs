@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
 import {
@@ -1541,6 +1544,46 @@ test("development server launches the local Vite entry through Node on every pla
 test("vite pins its cache to the hoisted root node_modules", async () => {
   const source = await readFile(new URL("../frontend/vite.config.js", import.meta.url), "utf8");
   assert.match(source, /cacheDir: fileURLToPath\(\s*new URL\(["']\.\.\/node_modules\/\.vite["']/);
+});
+
+// 管理端模板没有 module script，打包器只会把配置的 HTML 原样搬一遍；
+// 构建因此改成 sync + 拷贝，超出的 dist 内容（assets、.vite manifest）必须在发布时被清掉。
+test("admin shell build publishes dist without invoking a bundler", async () => {
+  const frontendPackage = JSON.parse(
+    await readFile(new URL("../frontend/package.json", import.meta.url), "utf8"),
+  );
+  for (const scriptName of ["build", "build:cdn"]) {
+    assert.match(frontendPackage.scripts[scriptName], /publish-dist\.mjs/, scriptName);
+    assert.doesNotMatch(frontendPackage.scripts[scriptName], /vite build/, scriptName);
+  }
+  assert.equal(frontendPackage.scripts["build:bundle"], undefined);
+});
+
+test("publish-dist replaces stale bundler output with the composed shell", async () => {
+  const publishScript = fileURLToPath(
+    new URL("../frontend/scripts/publish-dist.mjs", import.meta.url),
+  );
+  const outputDirectory = await mkdtemp(path.join(tmpdir(), "cf-emby-dist-"));
+  try {
+    await mkdir(path.join(outputDirectory, ".vite"), { recursive: true });
+    await writeFile(path.join(outputDirectory, ".vite", "manifest.json"), "{}");
+    await mkdir(path.join(outputDirectory, "assets"), { recursive: true });
+    await writeFile(path.join(outputDirectory, "assets", "app.js"), "stale");
+
+    const published = spawnSync(process.execPath, [publishScript, "--out", outputDirectory], {
+      cwd: fileURLToPath(new URL("../frontend", import.meta.url)),
+      encoding: "utf8",
+      shell: false,
+    });
+    assert.equal(published.status, 0, published.stderr);
+    assert.deepEqual(await readdir(outputDirectory), ["index.html"]);
+    assert.equal(
+      await readFile(path.join(outputDirectory, "index.html"), "utf8"),
+      await readFile(new URL("../frontend/index.html", import.meta.url), "utf8"),
+    );
+  } finally {
+    await rm(outputDirectory, { recursive: true, force: true });
+  }
 });
 
 test("Windows portproxy helper remains compatible with Windows PowerShell", async () => {
