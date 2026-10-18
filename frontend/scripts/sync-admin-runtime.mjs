@@ -19,25 +19,9 @@ const targetHtmlPath = path.resolve(repoRoot, "frontend/index.html");
 const targetMetaPath = path.resolve(repoRoot, "frontend/.admin-runtime-sync.json");
 
 const ADMIN_BOOTSTRAP_PLACEHOLDER = "__ADMIN_BOOTSTRAP_JSON__";
-const ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER = "__INIT_HEALTH_BANNER__";
 const ADMIN_APP_ROOT_PLACEHOLDER = "__ADMIN_APP_ROOT__";
 const ADMIN_APP_VERSION_PLACEHOLDER = "__APP_VERSION__";
 const ADMIN_APP_ROOT_HTML = '<div id="app" v-cloak></div>';
-
-const PRIMARY_VIEWS = Object.freeze(["dashboard", "nodes", "logs", "dns", "settings"]);
-
-const SETTINGS_VISUAL_SECTIONS = Object.freeze([
-  "系统 UI",
-  "代理与网络",
-  "静态资源策略",
-  "安全防护",
-  "日志设置",
-  "监控告警",
-  "账号设置",
-  "备份与恢复",
-]);
-
-const SETTINGS_SAVE_GROUPS = Object.freeze(["ui", "proxy", "security", "logs", "account"]);
 
 function sha256(text = "") {
   return createHash("sha256")
@@ -53,27 +37,10 @@ function buildFallbackBootstrap(adminPath = "/admin") {
   return {
     adminPath,
     loginPath: `${adminPath.replace(/\/+$/, "") || "/admin"}/login`,
-    contract: {
-      truthSources: {
-        primaryUi: "frontend/",
-        templateHtml: "frontend/admin-runtime.template.html",
-        runtimeEnhancements: "frontend/scripts/admin-runtime-enhancements.mjs",
-        contractDoc: "worker.md",
-      },
-      bootstrapActions: {
-        default: "getAdminBootstrap",
-        settings: "getSettingsBootstrap",
-      },
-      primaryViews: [...PRIMARY_VIEWS],
-      settings: {
-        visualSections: [...SETTINGS_VISUAL_SECTIONS],
-        saveGroups: [...SETTINGS_SAVE_GROUPS],
-      },
-    },
   };
 }
 
-// frontend/src 已冻结为非生产镜像：管理端 HTML 一旦出现 module script 就是半接通状态。
+// frontend/src 是保留的源世代（勿删，见 frontend/src/README.md）：管理端 HTML 一旦出现 module script 就是半接通状态。
 function assertNoModuleScriptEntry(html = "", label = "") {
   const moduleScripts = findAdminModuleScriptTags(html);
   if (moduleScripts.length > 0) {
@@ -88,7 +55,6 @@ function validateSourceTemplate(templateHtml = "") {
   assertNoModuleScriptEntry(source, "admin runtime template");
   const missing = [
     ADMIN_BOOTSTRAP_PLACEHOLDER,
-    ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER,
     ADMIN_APP_ROOT_PLACEHOLDER,
     ADMIN_APP_VERSION_PLACEHOLDER,
   ].filter((token) => !source.includes(token));
@@ -116,13 +82,11 @@ function materializeFrontendIndex(templateHtml = "") {
 
   const output = String(templateHtml || "")
     .replace(ADMIN_BOOTSTRAP_PLACEHOLDER, serializeInlineJson(buildFallbackBootstrap()))
-    .replace(ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER, "")
     .replace(ADMIN_APP_ROOT_PLACEHOLDER, ADMIN_APP_ROOT_HTML)
     .replaceAll(ADMIN_APP_VERSION_PLACEHOLDER, `V${APP_VERSION}`);
 
   const unresolvedTokens = [
     ADMIN_BOOTSTRAP_PLACEHOLDER,
-    ADMIN_INIT_HEALTH_BANNER_PLACEHOLDER,
     ADMIN_APP_ROOT_PLACEHOLDER,
     ADMIN_APP_VERSION_PLACEHOLDER,
   ].filter((token) => output.includes(token));
@@ -160,127 +124,6 @@ function replaceAllRequired(source, search, replacement, label) {
     throw new Error(`admin runtime template 缺少契约片段：${label}`);
   }
   return source.replaceAll(search, replacement);
-}
-
-function removeRequiredRange(source, startToken, endToken, label) {
-  const startIndex = source.indexOf(startToken);
-  const endIndex = source.indexOf(endToken, startIndex + startToken.length);
-  if (startIndex < 0 || endIndex < 0) {
-    throw new Error(`admin runtime template 缺少待移除片段：${label}`);
-  }
-  if (source.indexOf(startToken, startIndex + startToken.length) >= 0) {
-    throw new Error(`admin runtime template 待移除片段不唯一：${label}`);
-  }
-  return `${source.slice(0, startIndex)}${source.slice(endIndex)}`;
-}
-
-function findCallEnd(source, callStart) {
-  const openParenIndex = source.indexOf("(", callStart);
-  if (openParenIndex < 0) return -1;
-  let depth = 0;
-  let quote = "";
-  let escaped = false;
-  for (let index = openParenIndex; index < source.length; index += 1) {
-    const char = source[index];
-    if (quote) {
-      if (escaped) escaped = false;
-      else if (char === "\\") escaped = true;
-      else if (char === quote) quote = "";
-      continue;
-    }
-    if (char === '"' || char === "'" || char === "`") {
-      quote = char;
-      continue;
-    }
-    if (char === "(") depth += 1;
-    if (char === ")" && --depth === 0) return index + 1;
-  }
-  return -1;
-}
-
-function removeCompiledCallContaining(source, callPrefix, anchor, label) {
-  const anchorIndex = source.indexOf(anchor);
-  const callStart = source.lastIndexOf(callPrefix, anchorIndex);
-  const callEnd = findCallEnd(source, callStart);
-  if (anchorIndex < 0 || callStart < 0 || callEnd < 0 || callEnd <= anchorIndex) {
-    throw new Error(`admin runtime template 无法定位待移除调用：${label}`);
-  }
-  if (source.indexOf(anchor, anchorIndex + anchor.length) >= 0) {
-    throw new Error(`admin runtime template 待移除调用不唯一：${label}`);
-  }
-  return `${source.slice(0, callStart)}_createCommentVNode("config snapshots removed",!0)${source.slice(callEnd)}`;
-}
-
-function stripLegacyConfigSnapshotUi(outputHtml = "") {
-  let output = String(outputHtml || "");
-  output = replaceRequired(output, ",configSnapshots:[]", "", "配置快照前端状态");
-  output = removeRequiredRange(
-    output,
-    ",SNAPSHOT_REASON_LABELS={",
-    ",RECOMMENDED_SECTION_VALUES={",
-    "配置快照原因标签",
-  );
-  output = removeRequiredRange(
-    output,
-    ",formatSnapshotReason(",
-    "}}function normalizeCloudflareWorkerScriptUploadFileName",
-    "配置快照前端方法",
-  );
-  output = replaceRequired(
-    output,
-    ",configSnapshots:Array.isArray(o.configSnapshots)?o.configSnapshots.slice():[]",
-    "",
-    "配置快照 bootstrap 缓存字段",
-  );
-  output = replaceRequired(
-    output,
-    '"configSnapshots"===r?n.configSnapshots=Array.isArray(o)?o.slice():[]:',
-    "",
-    "配置快照 bootstrap 局部更新",
-  );
-  output = replaceRequired(
-    output,
-    ",Array.isArray(o.configSnapshots)&&this.applyConfigSnapshotsState(o.configSnapshots)",
-    "",
-    "配置快照 bootstrap 应用",
-  );
-  output = replaceAllRequired(
-    output,
-    ",configSnapshots:this.configSnapshots",
-    "",
-    "配置快照 bootstrap 输出",
-  );
-  output = replaceRequired(
-    output,
-    ',snapshotsRevision:String(o.snapshotsRevision||"").trim()',
-    "",
-    "配置快照 revision",
-  );
-  output = removeCompiledCallContaining(
-    output,
-    '_createElementVNode("div",{class:"ui-settings-panel settings-block"},[',
-    'id:"cfg-snapshots-list"',
-    "配置快照设置面板",
-  );
-  const snapshotStyleMatches = output.match(/#view-settings #cfg-snapshots-list[^}]+\}/g) || [];
-  if (snapshotStyleMatches.length !== 2) {
-    throw new Error(`admin runtime template 配置快照样式数量异常：${snapshotStyleMatches.length}`);
-  }
-  output = output.replace(/#view-settings #cfg-snapshots-list[^}]+\}/g, "");
-
-  const forbiddenTokens = [
-    "configSnapshots",
-    "ConfigSnapshots",
-    "ConfigSnapshot",
-    "cfg-snapshots-list",
-    "SNAPSHOT_REASON_LABELS",
-    "snapshotsRevision",
-  ];
-  const residual = forbiddenTokens.filter((token) => output.includes(token));
-  if (residual.length) {
-    throw new Error(`admin runtime template 仍含配置快照残留：${residual.join(", ")}`);
-  }
-  return output;
 }
 
 function applyHeadProbeContract(outputHtml = "") {
@@ -388,7 +231,7 @@ function applyHeadProbeContract(outputHtml = "") {
 function composeAdminRuntimeEnhancements(outputHtml = "") {
   // 模板只保留 2 处 syncReleaseSourcePreviewInSettingsForm 调用，方法体由这里补齐。
   const output = replaceRequired(
-    applyHeadProbeContract(stripLegacyConfigSnapshotUi(outputHtml)),
+    applyHeadProbeContract(outputHtml),
     "},syncSettingsFormFromRuntimeConfig",
     "},syncReleaseSourcePreviewInSettingsForm(){const r=this.settingsForm&&typeof this.settingsForm==='object'?this.settingsForm:{};const o=String(r.githubRepo||r.releaseRepo||r.repo||'').trim();if(o&&r.githubRepo!==o)r.githubRepo=o;return o},syncSettingsFormFromRuntimeConfig",
     "发布源预览设置方法",

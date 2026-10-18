@@ -374,7 +374,7 @@ function isExecutableInlineScriptType(rawType = "") {
   );
 }
 
-// frontend/src 已冻结为非生产镜像：出现 module script 就说明有人把组件化迁移做了一半。
+// frontend/src 是保留的源世代（勿删，见 frontend/src/README.md）：出现 module script 就说明有人把组件化迁移做了一半。
 function findAdminModuleScriptTags(html = "") {
   const moduleScripts = [];
   for (const tag of iterateHtmlOpeningTags(html)) {
@@ -458,11 +458,7 @@ async function main() {
     process.exit(1);
   }
 
-  if (
-    html.includes("__ADMIN_BOOTSTRAP_JSON__") ||
-    html.includes("__INIT_HEALTH_BANNER__") ||
-    html.includes("__ADMIN_APP_ROOT__")
-  ) {
+  if (html.includes("__ADMIN_BOOTSTRAP_JSON__") || html.includes("__ADMIN_APP_ROOT__")) {
     console.error(
       "[check:release] dist/index.html 仍残留 admin runtime 占位符，说明同步脚本未正确落盘。",
     );

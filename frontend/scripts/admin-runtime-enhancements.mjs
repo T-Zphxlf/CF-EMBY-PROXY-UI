@@ -685,6 +685,8 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 #view-settings .set-tab .block{font-size:inherit;line-height:1.4}
 #view-settings .settings-nav-shell>div:first-child>div:last-child{font-size:1rem;line-height:1.5rem}
 </style>`;
+// 这段脚本被注入到 </head> 前，早于 <body> 里定义 window.App 的编译 bundle。
+// 因此补丁不能同步应用：入口只装事件与观察器，真正打补丁的是 scheduleShellRefresh() 排的那一帧。
 const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancements="1">
 (() => {
   if (window.__ADMIN_RUNTIME_ENHANCEMENTS_READY__) return;

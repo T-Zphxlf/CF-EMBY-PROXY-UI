@@ -637,10 +637,12 @@ test("admin runtime keeps scoped migration, node-only, and release contracts", a
   assert.match(template, /App\.exportNodes/);
   assert.match(
     generatedIndex,
-    /_createCommentVNode\("config snapshots removed",!0\),App\.isSettingsExpertMode/,
+    /settings-worker-html-update-card"\}\)\]\),App\.isSettingsExpertMode/,
   );
   assert.doesNotMatch(generatedIndex, /\]\),null,App\.isSettingsExpertMode/);
-  assert.doesNotMatch(generatedIndex, /configSnapshots|cfg-snapshots-list/);
+  assert.doesNotMatch(generatedIndex, /config snapshots removed/);
+  assert.doesNotMatch(template, /configSnapshots|cfg-snapshots-list|SNAPSHOT_REASON_LABELS/);
+  assert.doesNotMatch(generatedIndex, /configSnapshots|cfg-snapshots-list|SNAPSHOT_REASON_LABELS/);
   assert.doesNotMatch(
     template,
     /cfg-release-repo|cfg-release-branch|cfg-release-tag|cfg-index-url/,
