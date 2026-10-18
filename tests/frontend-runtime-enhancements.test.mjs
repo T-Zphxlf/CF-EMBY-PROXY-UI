@@ -1618,7 +1618,7 @@ test("CDN checker rejects relative and forbidden release assets", () => {
   );
 });
 
-test("frozen frontend/src mirror rejects a module script admin entry", () => {
+test("kept frontend/src source rejects a module script admin entry", () => {
   assert.equal(findAdminModuleScriptTags('<script type="module">boot()</script>').length, 1);
   assert.equal(findAdminModuleScriptTags("<script type=module>boot()</script>").length, 1);
   assert.equal(findAdminModuleScriptTags("<script type='MODULE'>boot()</script>").length, 1);

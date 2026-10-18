@@ -107,11 +107,14 @@ frontend/admin-runtime.template.html
   -> Wrangler Static Assets (`ASSETS`) / Worker 管理端 shell 投递
 ```
 
+sync 这一步不止替换占位符，还包含一层**编译产物改写**（`applyHeadProbeContract`，约 20 个锚点、24 次以上替换）：把节点探测从 HEAD 改成 GET（文案、`pingTimeout` 默认值与配置边界、探测路径状态与下拉框）、换成 `getNodeProbeMeta` / `formatNodeProbeResult`，并向 `UI_DEFAULTS`、`CONFIG_PREVIEW_SANITIZE_RULES.allowedFields`、`booleanTrueFields`、`CONFIG_FORM_BINDINGS` 与字段名表注入 `hedgeProbePreferGet`。
+
+这一层不是临时手段：线上 bundle 是 643 KB 无 sourcemap 的压缩产物，`frontend/src` 是分叉之前的源世代，无法重新编译出当前 bundle，所以线上 UI 的语义变更只能落在编译后文本上。代价是**模板与线上不是同一款产品**：模板里仍写着 HEAD 语义，专家模式的"优先使用 GET"复选框只存在于生成物。改动它之前先读 `applyHeadProbeContract`；锚点匹配失败会直接抛错（`replaceRequired`），不会静默降级，改写结果由 `tests/frontend-runtime-enhancements.test.mjs` 的 "node GET probes use the fixed public-info path without path selectors" 锁定。
 部署时 Wrangler 将 `frontend/dist` 与 Worker 一起上传。已上传到 KV 或显式配置的管理端 HTML 保持最高优先级；未配置时，Worker 从 `ASSETS` 读取 `/index.html`，完成 HTML 校验和 bootstrap 注入后直接返回，因此新部署无需先手动上传前端。
 
 所有管理端 HTML 入口（`ASSETS`、远端 URL、KV 上传记录）都经过同一个 `validateAdminShellHtmlSource`：限制 2 MiB、校验 content-type、必须含 `#app` 根节点、必须含 runtime enhancements（`<style>` 与 `<script>` 各带 `data-admin-runtime-enhancements="1"`）、且外链资源必须符合发布策略。缺少 enhancement 层的旧版壳会被拒绝，而不是静默降级丢掉皮肤、并发保存保护和探针并发池。
 
-`frontend/src/` 的 Vue SFC、composable 和 feature 目录仍被源码语法/行为检查覆盖，并可作为组件化实现参考，但它是冻结的非生产镜像：生产 UI 改动固定在模板链落地，并同步镜像到 `frontend/src/`，否则 `tests/frontend-runtime-enhancements.test.mjs` 的文本断言会失败。`sync-admin-runtime.mjs --check` 会拒绝模板或组合产物中出现的 `<script type="module">`，所以不存在半接通的可用状态；规则见 `frontend/src/README.md`。
+`frontend/src/` 是线上管理台在分叉之前的可读 Vue 源码，**不要删除**。模板里的 651 KB bundle 是同一款管理台的压缩构建产物，没有源码映射；删掉 `frontend/src/` 后仓库里就不再有任何可读的管理台实现。它与当前 bundle 共享信息架构、action 契约与启动协议，但状态层、样式和部分功能已经分叉，因此它**不是**当前 bundle 的构建输入，也无法通过"镜像"追平：只改它不改变线上 UI，生产 UI 改动仍固定在模板链落地，并按 `tests/frontend-runtime-enhancements.test.mjs` 的现有断言同步到本目录。`sync-admin-runtime.mjs --check` 会拒绝模板或组合产物中出现的 `<script type="module">`，Worker 的 `validateAdminShellHtmlSource` 也会拒绝 importmap、内联动态 `import()` 和本地 bundle 资源，所以不存在半接通的可用状态。意义、证据与禁令见 `frontend/src/README.md`。
 
 ## 5. 存储边界
 
