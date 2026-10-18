@@ -684,6 +684,36 @@ html[data-theme="claude"]{--d1-control-radius:8px}:where(html[data-theme="claude
 #view-settings .settings-nav-shell [role="tab"] .block,
 #view-settings .set-tab .block{font-size:inherit;line-height:1.4}
 #view-settings .settings-nav-shell>div:first-child>div:last-child{font-size:1rem;line-height:1.5rem}
+/* 主题B：设置页「整理 KV 数据 / 整理 D1 数据」用红豆实心填充，白字白图标，图标与文字同一行居中 */
+:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;border-color:#964742;background:#964742;color:#fff}
+:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700>i{margin-right:0;color:#fff}
+:where(html[data-theme="claude"]) #view-settings button.border-amber-300.text-amber-700:hover{border-color:#7f3b37;background:#7f3b37;color:#fff}
+:where(html[data-theme="claude"]) .dark #view-settings button.border-amber-300.text-amber-700{border-color:#964742;background:#964742;color:#fff}
+:where(html[data-theme="claude"]) .dark #view-settings button.border-amber-300.text-amber-700:hover{border-color:#7f3b37;background:#7f3b37;color:#fff}
+/* 主题B：迁移与备份的「导入备份 / 导出…」同样红豆实心填充，白字白图标，图标与文字同一行居中 */
+:where(html[data-theme="claude"]) #view-settings .settings-secondary-label,
+:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:#964742 !important;color:#fff !important}
+:where(html[data-theme="claude"]) #view-settings .settings-secondary-label>i,
+:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]>i{margin-right:0;color:#fff}
+:where(html[data-theme="claude"]) #view-settings .settings-secondary-label:hover,
+:where(html[data-theme="claude"]) #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]:hover{background:#7f3b37 !important;color:#fff !important}
+:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label,
+:where(html[data-theme="claude"]) .dark #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]{border:0 !important;background:#964742 !important;color:#fff !important}
+:where(html[data-theme="claude"]) .dark #view-settings .settings-secondary-label:hover,
+:where(html[data-theme="claude"]) .dark #view-settings .flex.gap-4.flex-wrap>button[class*="bg-brand-600"]:hover{background:#7f3b37 !important;color:#fff !important}
+/* 主题B：账号页「一键清理全站缓存 (Purge)」并入同一套红豆实心按钮 */
+:where(html[data-theme="claude"]) #view-settings button.border-red-200.text-red-600{display:inline-flex;align-items:center;justify-content:center;gap:.375rem;white-space:nowrap;text-align:center;border-color:#964742 !important;background:#964742 !important;color:#fff !important}
+:where(html[data-theme="claude"]) #view-settings button.border-red-200.text-red-600:hover{border-color:#7f3b37 !important;background:#7f3b37 !important;color:#fff !important}
+/* 所有皮肤：设置页面板标题的标签回到最右侧，与标题同一条底边对齐，并去掉外围胶囊包裹 */
+#view-settings .ui-block-head{flex-direction:row;align-items:flex-end !important;justify-content:space-between;gap:.75rem}
+#view-settings .ui-block-head>span{margin:0 !important;border:0 !important;border-radius:0 !important;background:none !important;padding:0 !important;box-shadow:none !important;line-height:1.4;flex:0 0 auto;text-align:right;white-space:nowrap}
+/* 主题B：界面主题选择按钮在本皮肤内改用暖纸底色 + 红豆描边，而不是蓝色高亮 */
+:where(html[data-theme="claude"]) #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#964742;background:rgb(245,244,237);color:#964742}
+:where(html[data-theme="claude"]) .dark #view-settings .settings-theme-skin-card [data-admin-skin-option][aria-pressed="true"]{border-color:#964742;background:#242420;color:#fa9a80}
+
+/* 主题B：日志表格单元格垂直居中（资源类别标签撑高行时，节点/IP/UA 等文字不再贴基线） */
+:where(html[data-theme="claude"]) #view-logs #logs-tbody td,
+:where(html[data-theme="claude"]) #view-logs thead th{vertical-align:middle}
 </style>`;
 // 这段脚本被注入到 </head> 前，早于 <body> 里定义 window.App 的编译 bundle。
 // 因此补丁不能同步应用：入口只装事件与观察器，真正打补丁的是 scheduleShellRefresh() 排的那一帧。

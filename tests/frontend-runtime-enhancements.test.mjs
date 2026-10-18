@@ -421,6 +421,104 @@ test("node line editor stacks its heading and actions on mobile", () => {
   );
 });
 
+test("theme B tidy buttons fill solid red bean and center icon with text", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  assert.equal(
+    template.match(/class:"px-4 py-2 border border-amber-300 text-amber-700/g)?.length,
+    2,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings button\.border-amber-300\.text-amber-700\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:#964742;background:#964742;color:#fff\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings button\.border-amber-300\.text-amber-700>i\{margin-right:0;color:#fff\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\.dark #view-settings button\.border-amber-300\.text-amber-700\{border-color:#964742;background:#964742;color:#fff\}/,
+  );
+});
+
+test("theme B migration backup import and export buttons share one solid red bean core", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  assert.equal(template.match(/settings-secondary-label inline-flex items-center/g)?.length, 3);
+  assert.equal(
+    template.match(
+      /class:"px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white rounded-xl text-sm transition font-medium"/g,
+    )?.length,
+    3,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;flex:0 0 auto;border:0 !important;background:#964742 !important;color:#fff !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\.settings-secondary-label:hover,\n:where\(html\[data-theme="claude"\]\) #view-settings \.flex\.gap-4\.flex-wrap>button\[class\*="bg-brand-600"\]:hover\{background:#7f3b37 !important;color:#fff !important\}/,
+  );
+});
+
+test("theme B purge cache button joins the same solid red bean family", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  assert.equal(template.match(/border border-red-200 text-red-600 rounded-xl/g)?.length, 1);
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings button\.border-red-200\.text-red-600\{display:inline-flex;align-items:center;justify-content:center;gap:\.375rem;white-space:nowrap;text-align:center;border-color:#964742 !important;background:#964742 !important;color:#fff !important\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings button\.border-red-200\.text-red-600:hover\{border-color:#7f3b37 !important;background:#7f3b37 !important;color:#fff !important\}/,
+  );
+});
+
+test("settings panel head tags stay right-aligned on the title baseline without a pill shell", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings \.ui-block-head\{flex-direction:row;align-items:flex-end !important;justify-content:space-between;gap:\.75rem\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings \.ui-block-head>span\{margin:0 !important;border:0 !important;border-radius:0 !important;background:none !important;padding:0 !important;box-shadow:none !important;line-height:1\.4;flex:0 0 auto;text-align:right;white-space:nowrap\}/,
+  );
+});
+
+test("theme B skin option buttons use warm paper fill instead of blue highlight", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:#964742;background:rgb\(245,244,237\);color:#964742\}/,
+  );
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /\.dark #view-settings \.settings-theme-skin-card \[data-admin-skin-option\]\[aria-pressed="true"\]\{border-color:#964742;background:#242420;color:#fa9a80\}/,
+  );
+});
+
+test("ip pool source column hides the empty remark placeholder", async () => {
+  const template = await readFile(
+    new URL("../frontend/admin-runtime.template.html", import.meta.url),
+    "utf8",
+  );
+  assert.match(template, /_toDisplayString\(r\.remark\|\|""\)/);
+  assert.equal(template.match(/r\.remark\|\|"-"/g), null);
+});
+
+test("theme B log table cells center their text vertically", () => {
+  assert.match(
+    ADMIN_RUNTIME_ENHANCEMENT_STYLE,
+    /#view-logs #logs-tbody td,\n:where\(html\[data-theme="claude"\]\) #view-logs thead th\{vertical-align:middle\}/,
+  );
+});
 test("node advanced settings stay within the mobile modal width", () => {
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_STYLE,
