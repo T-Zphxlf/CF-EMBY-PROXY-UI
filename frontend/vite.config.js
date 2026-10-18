@@ -113,6 +113,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: normalizeBase(env.VITE_CDN_BASE_URL),
+    // 依赖已提升到根 node_modules：缓存默认跟着最近的 package.json 落在 frontend/node_modules，
+    // 会把“仓库里不该有 frontend/node_modules”这条事实破坏掉，所以显式指到根目录。
+    cacheDir: fileURLToPath(new URL("../node_modules/.vite", import.meta.url)),
     plugins: [vue(), tailwindcss()],
     resolve: {
       alias: {

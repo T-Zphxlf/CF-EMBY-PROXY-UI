@@ -1536,6 +1536,13 @@ test("development server launches the local Vite entry through Node on every pla
   assert.doesNotMatch(source, /vite\.cmd/);
 });
 
+// Vite 默认把缓存写到最近的 package.json 旁边，也就是 frontend/node_modules/.vite，
+// 会在依赖已提升到根 node_modules 之后又把 frontend/node_modules 造出来。
+test("vite pins its cache to the hoisted root node_modules", async () => {
+  const source = await readFile(new URL("../frontend/vite.config.js", import.meta.url), "utf8");
+  assert.match(source, /cacheDir: fileURLToPath\(\s*new URL\(["']\.\.\/node_modules\/\.vite["']/);
+});
+
 test("Windows portproxy helper remains compatible with Windows PowerShell", async () => {
   const source = await readFile(
     new URL("../frontend/scripts/windows-portproxy.ps1", import.meta.url),

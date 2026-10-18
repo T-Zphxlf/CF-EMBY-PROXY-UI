@@ -38,7 +38,7 @@ npm.cmd run --workspace frontend build
 
 ## 3. 常用命令
 
-依赖只安装一次：在仓库根目录执行 `npm.cmd ci`。`frontend` 是 npm workspace，它的依赖和根依赖一起提升到根 `node_modules/`，仓库里不应出现 `frontend/node_modules/`；不要在 `frontend/` 内单独 `npm install`，那会重新生成一套嵌套依赖树。
+依赖只安装一次：在仓库根目录执行 `npm.cmd ci`。`frontend` 是 npm workspace，它的依赖和根依赖一起提升到根 `node_modules/`，仓库里不应出现 `frontend/node_modules/` 里的依赖；不要在 `frontend/` 内单独 `npm install`，那会重新生成一套嵌套依赖树。Vite 的缓存默认按最近的 `package.json` 落在 `frontend/node_modules/.vite`（`.vite-temp` 同理），会凭空造出这个目录，所以 `frontend/vite.config.js` 用 `cacheDir` 把它固定到根 `node_modules/.vite`；看到 `frontend/node_modules` 就说明有人在那里装过依赖，或者 `cacheDir` 被改掉了。
 
 从仓库根目录运行：
 
