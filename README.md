@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.8** 把管理端交付链路收敛成“单文件 + 拷贝构建”：管理端模板里没有 module script，构建不再经过打包器，`publish-dist.mjs` 直接把 sync 后的组合产物拷成 `frontend/dist/index.html`，`dist/` 只允许存在这一个文件；CDN 地址由 Worker 的 `indexUrl` / 远端壳配置决定，`VITE_CDN_BASE_URL` 随之退场。同时把只在请求期生效的壳层约束前移到构建期：`npm run check` 用 2 MiB 体积上限与资产策略校验真实产物，GitHub Actions 在部署前先跑 `npm run check` 和 `npm run build:cdn`，超限或引入禁用资源的壳不会再带着绿灯上线。V19.7 的重定向与鉴权加固、控制面 / 数据面分层、缓存键清洗与转码 `m3u8` 禁缓存等能力全部保留。
+> 当前 **V19.8** 把交付链路与门禁收敛到构建期：管理端模板没有 module script，构建不再经过打包器，`publish-dist.mjs` 直接把 sync 后的组合产物拷成 `frontend/dist/index.html`（`dist/` 只允许这一个文件，`VITE_CDN_BASE_URL` 与 Vite 的 `base` 归一化退场）；只在请求期生效的 2 MiB 壳层上限与资产策略前移到 `npm run check`，GitHub Actions 在部署前先跑 `npm run check` 和 `npm run build:cdn`。管理端侧新增界面皮肤（经典蓝 / 暖纸）与字体加载，上传类请求不再被 UI 超时中断（中断提示无法证明服务端没写入，重试可能重复部署），自绘弹层补上原生 dialog 语义、焦点管理与 Esc 关闭；配置快照面板与 `__INIT_HEALTH_BANNER__` 占位符连同 sync 里那套“从压缩产物里切除旧 UI”的改写器一并删除，`applyHeadProbeContract` 成为唯一保留的编译产物改写层。Worker 侧 `validateAdminShellHtmlSource` 现在要求壳同时带 enhancement 层的 `<style>` 与 `<script>`，缺层直接拒绝而不是静默降级丢掉皮肤与并发保护；新增 `admin-contract-parity` 契约测试，锁住 action 可被 registry 解析、boot 协议符号在壳层 / loader / 兜底壳三处一致、`frontend/src` 仍只调用可解析 action 并保持 5 个主视图与 8 个设置分区。依赖统一提升到根 `node_modules`，dev-server 改用 `createRequire` 解析 Vite CLI、缓存目录也指到根，仓库里不再出现 `frontend/node_modules`；`CONFIG_AUTHORITY_MODE`、`VITE_VENDOR_MODE`、`VITE_CDN_IMPORT_*` 等已失效的配置项从样例中删除。V19.7 的重定向与鉴权加固、控制面 / 数据面分层、缓存键清洗与转码 `m3u8` 禁缓存等能力全部保留。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
