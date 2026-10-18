@@ -45,10 +45,10 @@
 
 
 
-## V19.7版本
+## V19.8版本
 
 ## 更新摘要
 
-
-- **重定向与鉴权加固**：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全；`auto` 模式把已识别的 `Emby` scheme 改写为 `MediaBrowser`；客户端鉴权无法随跳转携带时，跨域重定向在跳数用尽等中断点返回 409，不再透传无鉴权的节点 `Location`。
-- **重定向映射**：target base 路径大小写不敏感；legacy `/emby`、`/mediabrowser` 根兜底仅用于 `Location` 映射，PlaybackInfo 改写与元数据预热保持严格 base 匹配；只跟随 301/302/303/307/308，非 http(s) 或无法解析的 `Location` 一律删除。
+- **管理端交付**：构建不再经过打包器。管理端模板没有 module script，`publish-dist.mjs` 直接把 sync 生成的 `frontend/index.html` 拷进 `frontend/dist/`，先清空输出目录，所以 `dist/` 里只剩 `index.html`，历史打包残留（`assets/`、`.vite/manifest.json`）不会进仓库；`build:bundle` 删除，`VITE_CDN_BASE_URL` 与 Vite 的 `base` 归一化一并退场。
+- **构建期门槛**：`check-cdn-paths.mjs` 量真实产物的 UTF-8 字节数，超过 Worker 的 2 MiB 壳层上限直接失败，并通过 `admin-contract-parity` 用 Worker 的 `validateAdminShellHtmlSource` 校验仓库里的 `dist/index.html`。
+- **部署门禁**：GitHub Actions 在构建与部署前先跑 `npm run check`，构建步骤换成 `npm run build:cdn`，同步漂移、资产策略、壳层上限和 `worker.js` 新鲜度都在部署前失败。

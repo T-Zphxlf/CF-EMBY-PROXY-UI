@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V19.7-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V19.8-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.7** 在原有新手 / 高手设置模式与分区导航基础上，继续强化 Jellyfin 12 兼容与重定向安全：媒体查询 token 按 `api_key` / `ApiKey` 逐名补全、`auto` 模式统一改写 `Emby` scheme、跨域重定向在鉴权不可携带时改为 fail-closed（返回 409 而非透传无鉴权 `Location`），并把 legacy `/emby` 兜底收敛到重定向映射；同时保留控制面 / 数据面分层、缓存键清洗、转码 `m3u8` 禁缓存、Geo 白/黑名单模式切换等优化。本轮同时做了一轮性能收敛：PlaybackInfo 缓存命中直接复用写入时解析的 payload，条目因此常驻解析对象（约 3–4× body，受 `maxTotalBytes` 约束）；`/web` 子树的百分号解码封顶 4 层，避免鉴权前的 O(n²) 开销；管理端 shell HTML 的标签扫描与内联 `import()` 搜索不再整篇 `toLowerCase()`，`exportConfig` 的备份载荷只序列化一次。
+> 当前 **V19.8** 把管理端交付链路收敛成“单文件 + 拷贝构建”：管理端模板里没有 module script，构建不再经过打包器，`publish-dist.mjs` 直接把 sync 后的组合产物拷成 `frontend/dist/index.html`，`dist/` 只允许存在这一个文件；CDN 地址由 Worker 的 `indexUrl` / 远端壳配置决定，`VITE_CDN_BASE_URL` 随之退场。同时把只在请求期生效的壳层约束前移到构建期：`npm run check` 用 2 MiB 体积上限与资产策略校验真实产物，GitHub Actions 在部署前先跑 `npm run check` 和 `npm run build:cdn`，超限或引入禁用资源的壳不会再带着绿灯上线。V19.7 的重定向与鉴权加固、控制面 / 数据面分层、缓存键清洗与转码 `m3u8` 禁缓存等能力全部保留。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
