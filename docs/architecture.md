@@ -96,7 +96,7 @@ flowchart TD
 
 ### 管理端事实来源与组合链
 
-当前 Vite 入口是 `frontend/index.html`，不是 `frontend/src/App.vue` 的独立挂载入口。生产 UI 的实际链路是：
+当前 Vite 入口是 `frontend/index.html`，而该文件没有任何 module script：bootstrap 占位符在 sync 阶段就已替换，Vite 只是把它当静态 HTML 原样输出到 `frontend/dist/`，不会编译 `frontend/src/`。生产 UI 的实际链路是：
 
 ```text
 frontend/admin-runtime.template.html
@@ -111,7 +111,7 @@ frontend/admin-runtime.template.html
 
 所有管理端 HTML 入口（`ASSETS`、远端 URL、KV 上传记录）都经过同一个 `validateAdminShellHtmlSource`：限制 2 MiB、校验 content-type、必须含 `#app` 根节点、必须含 runtime enhancements（`<style>` 与 `<script>` 各带 `data-admin-runtime-enhancements="1"`）、且外链资源必须符合发布策略。缺少 enhancement 层的旧版壳会被拒绝，而不是静默降级丢掉皮肤、并发保存保护和探针并发池。
 
-`frontend/src/` 的 Vue SFC、composable 和 feature 目录仍被源码语法/行为检查覆盖，并可作为组件化实现参考；但只修改这些文件不会自动改变当前生产 HTML。该目录已冻结为非生产镜像：生产 UI 改动固定在模板链落地，并同步镜像到 `frontend/src/`，否则 `tests/frontend-runtime-enhancements.test.mjs` 的文本断言会失败；规则见 `frontend/src/README.md`。
+`frontend/src/` 的 Vue SFC、composable 和 feature 目录仍被源码语法/行为检查覆盖，并可作为组件化实现参考，但它是冻结的非生产镜像：生产 UI 改动固定在模板链落地，并同步镜像到 `frontend/src/`，否则 `tests/frontend-runtime-enhancements.test.mjs` 的文本断言会失败。`sync-admin-runtime.mjs --check` 会拒绝模板或组合产物中出现的 `<script type="module">`，所以不存在半接通的可用状态；规则见 `frontend/src/README.md`。
 
 ## 5. 存储边界
 
