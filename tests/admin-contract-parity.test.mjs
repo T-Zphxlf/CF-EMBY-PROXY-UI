@@ -5,6 +5,7 @@ import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { ADMIN_RUNTIME_ENHANCEMENT_SCRIPT } from "../frontend/scripts/admin-runtime-enhancements.mjs";
+import { MAX_ADMIN_SHELL_BYTES } from "../frontend/scripts/check-cdn-paths.mjs";
 import { createTestApplication } from "../worker/testing/hooks.js";
 
 const BACKSLASH = String.fromCharCode(92);
@@ -169,4 +170,24 @@ test("frontend/src keeps the shipped admin information architecture", async () =
     assert.ok(app.includes(`"${view}"`), `frontend/src/App.vue 缺少主视图 ${view}`);
     assert.ok(shell.includes(`#${view}`), `线上壳层缺少主视图锚点 #${view}`);
   }
+});
+
+// 壳层体积与资产策略是 Worker 的运行时门槛：构建期必须用真实产物验证一次，
+// 否则超限、缺 enhancement 层或引入禁用资源的壳只会在线上请求时才被拒绝。
+test("frontend shell byte budget mirrors the Worker shell limit", async () => {
+  const workerShell = await readSource("worker/runtime/application-facades.js");
+  assert.match(workerShell, /ADMIN_REMOTE_SHELL_MAX_BYTES = 2 \* 1024 \* 1024/);
+  assert.equal(MAX_ADMIN_SHELL_BYTES, 2 * 1024 * 1024);
+});
+
+test("shipped admin shell passes the Worker shell gate", async () => {
+  const { testPlatform } = createTestApplication();
+  const shellHtml = await readSource("frontend/dist/index.html");
+  const validated = testPlatform.fetch.adminShell.validateAdminShellHtmlSource(
+    shellHtml,
+    "https://worker.test/index.html",
+    { sourceLabel: "bundled admin shell", contentType: "text/html; charset=utf-8" },
+  );
+  assert.equal(validated.bytes, Buffer.byteLength(shellHtml, "utf8"));
+  assert.ok(validated.bytes <= MAX_ADMIN_SHELL_BYTES);
 });

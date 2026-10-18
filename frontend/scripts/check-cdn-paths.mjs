@@ -3,6 +3,9 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+// 与 Worker 的 ADMIN_REMOTE_SHELL_MAX_BYTES 对齐：壳在请求期会被这个上限拒绝。
+const MAX_ADMIN_SHELL_BYTES = 2 * 1024 * 1024;
+
 function isMutableJsdelivrGithubAssetUrl(assetUrl = "") {
   let parsedUrl = null;
   try {
@@ -434,6 +437,14 @@ async function main() {
   const html = await readFile(distHtmlPath, "utf8");
   const sourceHtml = await readFile(sourceHtmlPath, "utf8");
 
+  const shellBytes = Buffer.byteLength(html, "utf8");
+  if (shellBytes > MAX_ADMIN_SHELL_BYTES) {
+    console.error(
+      `[check:release] dist/index.html 为 ${shellBytes} 字节，超过 Worker 壳层上限 ${MAX_ADMIN_SHELL_BYTES} 字节。`,
+    );
+    process.exit(1);
+  }
+
   let builtAssetFiles = [];
   try {
     builtAssetFiles = await readdir(assetsDir);
@@ -530,11 +541,18 @@ async function main() {
   console.log(
     `[check:release] 已确认 ${assetMatches.length} 个 JS/CSS 资源为可代理的外部绝对 URL。`,
   );
-  console.log("[check:release] dist/index.html 满足单文件管理台 + Worker 同源代理约束。");
+  console.log(
+    `[check:release] dist/index.html 满足单文件管理台 + Worker 同源代理约束（壳 ${shellBytes} B / 上限 ${MAX_ADMIN_SHELL_BYTES} B）。`,
+  );
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   await main();
 }
 
-export { findAdminModuleScriptTags, inspectRuntimeAssets, isForbiddenRuntimeAsset };
+export {
+  MAX_ADMIN_SHELL_BYTES,
+  findAdminModuleScriptTags,
+  inspectRuntimeAssets,
+  isForbiddenRuntimeAsset,
+};
