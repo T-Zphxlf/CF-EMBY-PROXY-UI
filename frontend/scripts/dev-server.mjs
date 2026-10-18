@@ -1,7 +1,16 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import os from "node:os";
+import path from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
+
+// 依赖由根 node_modules 统一提升，这里按模块解析找 vite，不写死目录层级。
+const frontendRequire = createRequire(new URL("../package.json", import.meta.url));
+const viteEntry = path.join(
+  path.dirname(frontendRequire.resolve("vite/package.json")),
+  "bin",
+  "vite.js",
+);
 
 function resolvePort() {
   const rawValue = Number(process.env.PORT || process.env.VITE_DEV_PORT || 5173);
@@ -30,7 +39,6 @@ function resolveWslIpv4() {
 const port = resolvePort();
 const vendorMode = String(process.env.VITE_VENDOR_MODE || "bundle").trim() || "bundle";
 const wslIpv4 = resolveWslIpv4();
-const viteEntry = fileURLToPath(new URL("../node_modules/vite/bin/vite.js", import.meta.url));
 
 console.log("");
 console.log(`[dev] Vendor mode: ${vendorMode}`);

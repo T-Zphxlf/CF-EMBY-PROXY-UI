@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 
@@ -1515,10 +1518,18 @@ test("development server launches the local Vite entry through Node on every pla
     new URL("../frontend/scripts/dev-server.mjs", import.meta.url),
     "utf8",
   );
-  assert.match(
-    source,
-    /const viteEntry = fileURLToPath\(new URL\(["']\.\.\/node_modules\/vite\/bin\/vite\.js["']/,
+  assert.match(source, /createRequire\(new URL\(["']\.\.\/package\.json["']/);
+  assert.match(source, /frontendRequire\.resolve\(["']vite\/package\.json["']\)/);
+  assert.doesNotMatch(source, /node_modules\/vite/);
+
+  // 依赖布局变化（提升到根 node_modules / 嵌套在 frontend 下）时，解析结果必须仍指向真实 CLI。
+  const frontendRequire = createRequire(new URL("../frontend/package.json", import.meta.url));
+  const resolvedEntry = path.join(
+    path.dirname(frontendRequire.resolve("vite/package.json")),
+    "bin",
+    "vite.js",
   );
+  assert.ok(existsSync(resolvedEntry), `vite CLI 未解析到：${resolvedEntry}`);
   assert.match(source, /spawn\(\s*process\.execPath,\s*\[viteEntry,/);
   assert.doesNotMatch(source, /vite\.cmd/);
 });
