@@ -53,6 +53,15 @@ import {
 } from "../worker/runtime/proxy/playback/contract.js";
 import { PlaybackInfoCacheStore } from "../worker/runtime/proxy/playback/cache.js";
 
+// 生产管理台壳由 sync-admin-runtime 注入 enhancement 层；Worker 会拒绝缺失该层的壳。
+const ADMIN_SHELL_ENHANCEMENT_MARKUP =
+  '<style data-admin-runtime-enhancements="1"></style>' +
+  '<script data-admin-runtime-enhancements="1"></script>';
+
+function adminShellDocument({ head = "", body = "" } = {}) {
+  return `<!doctype html><html><head>${head}${ADMIN_SHELL_ENHANCEMENT_MARKUP}</head><body>${body}</body></html>`;
+}
+
 const hooks = createTestApplication();
 assert.ok(hooks, "worker.js must expose Node test hooks");
 
@@ -1807,8 +1816,10 @@ test("manual setup renders GET and HEAD as no-store with the recovery reason", a
 
 test("bundled frontend assets render when no uploaded admin index is configured", async () => {
   const assetRequests = [];
-  const bundledHtml =
-    '<!doctype html><html><head><title>Bundled UI</title></head><body><div id="app" data-source="bundled"></div></body></html>';
+  const bundledHtml = adminShellDocument({
+    head: "<title>Bundled UI</title>",
+    body: '<div id="app" data-source="bundled"></div>',
+  });
   const env = {
     ADMIN_PATH: "/console",
     ASSETS: {
@@ -2027,8 +2038,10 @@ test("concurrent legacy migration cannot overwrite a fresh revalidation in one i
   isolateState.SingleFlightTasks.clear();
   isolateState.AdminRemoteShellCacheMutationChains.clear();
   const remoteShellIndexUrl = "https://example.test/releases/v1/index.html";
-  const legacyHtml =
-    '<!doctype html><html><head><script>tailwind.config={}</script></head><body><div id="app">legacy-marker</div></body></html>';
+  const legacyHtml = adminShellDocument({
+    head: "<script>tailwind.config={}</script>",
+    body: '<div id="app">legacy-marker</div>',
+  });
   const legacyResponse = buildAdminRemoteShellStoredResponse(legacyHtml, {
     variantEtag: "legacy-etag",
     lastModified: "Wed, 01 Jul 2026 12:00:00 GMT",
@@ -2081,16 +2094,13 @@ test("concurrent legacy migration cannot overwrite a fresh revalidation in one i
       fetch: async () => {
         revalidationFetchCount += 1;
         if (revalidationFetchCount > 1) throw new Error("duplicate revalidation");
-        return new Response(
-          '<!doctype html><html><body><div id="app">fresh-marker</div></body></html>',
-          {
-            headers: {
-              "Content-Type": "text/html; charset=utf-8",
-              ETag: '"fresh-upstream-etag"',
-              "Last-Modified": "Thu, 02 Jul 2026 12:00:00 GMT",
-            },
+        return new Response(adminShellDocument({ body: '<div id="app">fresh-marker</div>' }), {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            ETag: '"fresh-upstream-etag"',
+            "Last-Modified": "Thu, 02 Jul 2026 12:00:00 GMT",
           },
-        );
+        });
       },
     },
     async () => {
@@ -2126,7 +2136,7 @@ test("legacy migration waits for an in-flight fresh write after current-cache ev
   isolateState.AdminRemoteShellCacheMutationChains.clear();
   const remoteShellIndexUrl = "https://example.test/releases/v1/index.html";
   const staleResponse = buildAdminRemoteShellStoredResponse(
-    '<!doctype html><html><body><div id="app">stale-marker</div></body></html>',
+    adminShellDocument({ body: '<div id="app">stale-marker</div>' }),
     {
       variantEtag: "stale-etag",
       sourceUrl: remoteShellIndexUrl,
@@ -2134,7 +2144,7 @@ test("legacy migration waits for an in-flight fresh write after current-cache ev
     },
   );
   const legacyResponse = buildAdminRemoteShellStoredResponse(
-    '<!doctype html><html><body><div id="app">legacy-marker</div></body></html>',
+    adminShellDocument({ body: '<div id="app">legacy-marker</div>' }),
     {
       variantEtag: "legacy-etag",
       sourceUrl: remoteShellIndexUrl,
@@ -2199,12 +2209,9 @@ test("legacy migration waits for an in-flight fresh write after current-cache ev
         revalidationFetchCount += 1;
         revalidationFetchStarted.resolve();
         await allowFreshFetch.promise;
-        return new Response(
-          '<!doctype html><html><body><div id="app">fresh-marker</div></body></html>',
-          {
-            headers: { "Content-Type": "text/html; charset=utf-8" },
-          },
-        );
+        return new Response(adminShellDocument({ body: '<div id="app">fresh-marker</div>' }), {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
       },
     },
     async () => {
@@ -2297,7 +2304,7 @@ test("cached remote shell route returns a stable conditional 304", async () => {
   isolateState.SingleFlightTasks.clear();
   const remoteShellIndexUrl = "https://example.test/releases/v1/index.html";
   const cachedResponse = buildAdminRemoteShellStoredResponse(
-    '<!doctype html><html><body><div id="app">cached</div></body></html>',
+    adminShellDocument({ body: '<div id="app">cached</div>' }),
     {
       variantEtag: "route-representation-etag",
       lastModified: "Wed, 01 Jul 2026 12:00:00 GMT",
@@ -2353,7 +2360,7 @@ test("remote shell does not reuse source Last-Modified for transformed represent
   isolateState.SingleFlightTasks.clear();
   const remoteShellIndexUrl = "https://example.test/releases/v1/index.html";
   const cachedResponse = buildAdminRemoteShellStoredResponse(
-    '<!doctype html><html><body><div id="app">new-bootstrap</div></body></html>',
+    adminShellDocument({ body: '<div id="app">new-bootstrap</div>' }),
     {
       variantEtag: "new-representation-etag",
       lastModified: "Wed, 01 Jul 2026 12:00:00 GMT",
@@ -2417,7 +2424,7 @@ test("concurrent remote shell cold loads share one upstream fetch", async () => 
         fetch: async () => {
           upstreamFetchCount += 1;
           await fetchGate.promise;
-          return new Response('<!doctype html><html><body><div id="app"></div></body></html>', {
+          return new Response(adminShellDocument({ body: '<div id="app"></div>' }), {
             headers: { "Content-Type": "text/html", ETag: '"v1"' },
           });
         },
@@ -2456,7 +2463,7 @@ test("cached remote shell responses are materialized before leaving their loader
   isolateState.AdminRemoteShellCacheMutationChains.clear();
   const remoteShellIndexUrl = "https://example.test/releases/v1/index.html";
   const matchedResponse = buildAdminRemoteShellStoredResponse(
-    '<!doctype html><html><body><div id="app">cached-shell</div></body></html>',
+    adminShellDocument({ body: '<div id="app">cached-shell</div>' }),
     { variantEtag: "cached-etag", sourceUrl: remoteShellIndexUrl },
   );
   // A cache-matched Response belongs to the request that matched it. Reusing it from another
@@ -6635,7 +6642,7 @@ test("admin HTML MIME acceptance remains limited to document-capable responses",
 });
 
 test("fresh remote shell rejects a wrong MIME even when the body is HTML", async () => {
-  const html = '<!doctype html><html><body><div id="app"></div></body></html>';
+  const html = adminShellDocument({ body: '<div id="app"></div>' });
   await withWorkerGlobals(
     {
       fetch: async () =>
@@ -6691,6 +6698,45 @@ test("fresh remote shell rejects an HTML document without the app root", async (
   );
 });
 
+test("fresh remote shell rejects a shell without the runtime enhancement layer", async () => {
+  let html = "";
+  await withWorkerGlobals(
+    {
+      fetch: async () =>
+        new Response(html, {
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        }),
+    },
+    async () => {
+      const invalidDocuments = [
+        '<!doctype html><html><head></head><body><div id="app"></div></body></html>',
+        '<!doctype html><html><head><style data-admin-runtime-enhancements="1"></style></head><body><div id="app"></div></body></html>',
+        '<!doctype html><html><head><script data-admin-runtime-enhancements="1"></script></head><body><div id="app"></div></body></html>',
+        '<!doctype html><html><head></head><body><div id="app"></div><p>data-admin-runtime-enhancements="1"</p></body></html>',
+      ];
+      for (const invalidDocument of invalidDocuments) {
+        html = invalidDocument;
+        await assert.rejects(
+          fetchAdminRemoteShellStoredResponse(
+            "https://example.test/index.html",
+            { adminPath: "/admin" },
+            { ok: true, missing: [] },
+          ),
+          /missing runtime enhancements/,
+        );
+      }
+
+      html = adminShellDocument({ body: '<div id="app"></div>' });
+      const payload = await fetchAdminRemoteShellStoredResponse(
+        "https://example.test/index.html",
+        { adminPath: "/admin" },
+        { ok: true, missing: [] },
+      );
+      assert.equal(payload.storedResponse.status, 200);
+    },
+  );
+});
+
 test("fresh remote shell recognizes only an exact app id attribute", async () => {
   let html = "";
   await withWorkerGlobals(
@@ -6702,8 +6748,10 @@ test("fresh remote shell recognizes only an exact app id attribute", async () =>
     },
     async () => {
       const validDocuments = [
-        '<!doctype html><html><body><div title=">"></div><main class="root" ID = \'app\'></main></body></html>',
-        '<!doctype html><html><body><div title="<script>"></div><div id="app"></div></body></html>',
+        adminShellDocument({
+          body: '<div title=">"></div><main class="root" ID = \'app\'></main>',
+        }),
+        adminShellDocument({ body: '<div title="<script>"></div><div id="app"></div>' }),
       ];
       for (const validDocument of validDocuments) {
         html = validDocument;
@@ -6795,7 +6843,7 @@ test("fresh remote shell keeps the external asset policy boundary", async () => 
     {
       fetch: async () =>
         new Response(
-          `<!doctype html><html><body><div id="app"></div><script src="${assetUrl}"></script></body></html>`,
+          adminShellDocument({ body: `<div id="app"></div><script src="${assetUrl}"></script>` }),
           { headers: { "Content-Type": "text/html; charset=utf-8" } },
         ),
     },
@@ -6826,8 +6874,10 @@ test("fresh remote shell keeps the external asset policy boundary", async () => 
 });
 
 test("remote shell rejects importmaps and rewrites semantic assets without extensions", async () => {
-  let html =
-    '<!doctype html><html><head><script type="importmap">{"imports":{}}</script></head><body><div id="app"></div></body></html>';
+  let html = adminShellDocument({
+    head: '<script type="importmap">{"imports":{}}</script>',
+    body: '<div id="app"></div>',
+  });
   await withWorkerGlobals(
     {
       fetch: async () =>
@@ -6845,11 +6895,14 @@ test("remote shell rejects importmaps and rewrites semantic assets without exten
         /importmap/,
       );
 
-      html = `<!doctype html><html><head>
+      html = adminShellDocument({
+        head: `
       <script src='https://cdn.tailwindcss.com'></script>
       <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.esm-browser.prod.js">
       <link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/example@1.0.0/theme">
-    </head><body><div id="app"></div></body></html>`;
+    `,
+        body: '<div id="app"></div>',
+      });
       const payload = await fetchAdminRemoteShellStoredResponse(
         "https://example.test/index.html",
         { adminPath: "/admin" },
@@ -6866,10 +6919,13 @@ test("remote shell rejects importmaps and rewrites semantic assets without exten
 });
 
 test("local index uploads use the remote shell policy and a content-addressed source", async () => {
-  const validHtml = `<!doctype html><html><head>
+  const validHtml = adminShellDocument({
+    head: `
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.esm-browser.prod.js">
-  </head><body><div id="app"></div></body></html>`;
+  `,
+    body: '<div id="app"></div>',
+  });
   const record = await buildAdminLocalIndexUploadRecord(validHtml, "C:\\exports\\index.html");
   assert.match(
     record.sourceUrl,
@@ -6881,19 +6937,24 @@ test("local index uploads use the remote shell policy and a content-addressed so
 
   await assert.rejects(
     buildAdminLocalIndexUploadRecord(
-      '<!doctype html><html><body><div id="app"></div><script src="/assets/app.js"></script></body></html>',
+      adminShellDocument({ body: '<div id="app"></div><script src="/assets/app.js"></script>' }),
     ),
     /asset policy invalid/,
   );
   await assert.rejects(
     buildAdminLocalIndexUploadRecord(
-      '<!doctype html><html><head><script type="importmap">{}</script></head><body><div id="app"></div></body></html>',
+      adminShellDocument({
+        head: '<script type="importmap">{}</script>',
+        body: '<div id="app"></div>',
+      }),
     ),
     /asset policy invalid/,
   );
   await assert.rejects(
     buildAdminLocalIndexUploadRecord(
-      '<!doctype html><html><body><div id="app"></div><script>void import("https://evil.test/runtime.js")</script></body></html>',
+      adminShellDocument({
+        body: '<div id="app"></div><script>void import("https://evil.test/runtime.js")</script>',
+      }),
     ),
     /动态 import/,
   );
@@ -6919,7 +6980,7 @@ test("Worker and HTML update requires both uploaded files", async () => {
   const { kv } = createInMemoryKvStore({ [kernel.CONFIG_KEY]: {} });
   const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "worker-html-files-required" };
   invalidateRuntimeConfigCache();
-  const validHtml = '<!doctype html><html><body><div id="app"></div></body></html>';
+  const validHtml = adminShellDocument({ body: '<div id="app"></div>' });
   const cases = [
     {
       workerFileName: "worker.js",
@@ -6984,7 +7045,7 @@ test("Worker and HTML update refuses a zone-level script that is not bound to th
             workerFileName: "worker.js",
             workerScriptContent: "export default { fetch() { return new Response('current'); } }",
             indexFileName: "index.html",
-            indexHtml: '<!doctype html><html><body><div id="app"></div></body></html>',
+            indexHtml: adminShellDocument({ body: '<div id="app"></div>' }),
           },
           {
             env,
@@ -7055,7 +7116,7 @@ test("Worker and HTML update uploads only the script bound to the current host",
             workerFileName: "worker.js",
             workerScriptContent: "export default { fetch() { return new Response('current'); } }",
             indexFileName: "index.html",
-            indexHtml: '<!doctype html><html><body><div id="app"></div></body></html>',
+            indexHtml: adminShellDocument({ body: '<div id="app"></div>' }),
           },
           {
             env,
@@ -7083,8 +7144,10 @@ test("Worker and HTML update uploads only the script bound to the current host",
 test("local index source persists in KV and renders through the same-origin vendor path", async () => {
   const { kv } = createInMemoryKvStore({ "sys:theme": {} });
   const env = { ADMIN_PATH: "/admin", ENI_KV: kv };
-  const html =
-    '<!doctype html><html><head><script src="https://cdn.example.test/app.js"></script></head><body><div id="app"></div></body></html>';
+  const html = adminShellDocument({
+    head: '<script src="https://cdn.example.test/app.js"></script>',
+    body: '<div id="app"></div>',
+  });
   const record = await buildAdminLocalIndexUploadRecord(html, "index.html");
   const persisted = await kernel.persistAdminIndexUpload(record, { env, kv });
   const resolved = buildResolvedAdminIndexState({}, persisted.config);
@@ -7132,8 +7195,10 @@ test("local index source persists in KV and renders through the same-origin vend
 test("vendor assets strip the third-party sourceMappingURL comment", async () => {
   const { kv } = createInMemoryKvStore({ "sys:theme": {} });
   const env = { ADMIN_PATH: "/admin", ENI_KV: kv };
-  const html =
-    '<!doctype html><html><head><script src="https://cdn.example.test/lucide.min.js"></script><link rel="stylesheet" href="https://cdn.example.test/app.css"></head><body><div id="app"></div></body></html>';
+  const html = adminShellDocument({
+    head: '<script src="https://cdn.example.test/lucide.min.js"></script><link rel="stylesheet" href="https://cdn.example.test/app.css">',
+    body: '<div id="app"></div>',
+  });
   const record = await buildAdminLocalIndexUploadRecord(html, "index.html");
   const persisted = await kernel.persistAdminIndexUpload(record, { env, kv });
   const entries = record.manifest.entries;
@@ -7179,12 +7244,12 @@ test("vendor assets strip the third-party sourceMappingURL comment", async () =>
 });
 
 test("local index upload replaces a corrupted record under the same revision", async () => {
-  const html = '<!doctype html><html><body><div id="app"></div></body></html>';
+  const html = adminShellDocument({ body: '<div id="app"></div>' });
   const record = await buildAdminLocalIndexUploadRecord(html, "index.html");
   const uploadKey = kernel.buildAdminIndexUploadKey(record.revision);
   const corruptedRecord = {
     ...record,
-    html: '<!doctype html><html><body><div id="app">corrupted</div></body></html>',
+    html: adminShellDocument({ body: '<div id="app">corrupted</div>' }),
   };
   const { kv, storedValues, putKeys } = createInMemoryKvStore({
     [kernel.CONFIG_KEY]: {},
@@ -7265,7 +7330,10 @@ test("jsDelivr GitHub mutable-ref classifier distinguishes branches from immutab
 test("mutable vendor assets bypass asset cache and return no-store", async () => {
   const upstreamUrl = "https://cdn.jsdelivr.net./gh/owner/repo/app.js";
   const indexRecord = await buildAdminLocalIndexUploadRecord(
-    `<!doctype html><html><head><script src="${upstreamUrl}"></script></head><body><div id="app"></div></body></html>`,
+    adminShellDocument({
+      head: `<script src="${upstreamUrl}"></script>`,
+      body: '<div id="app"></div>',
+    }),
     "index.html",
   );
   const manifestEntry = indexRecord.manifest.entries[0];
@@ -7327,7 +7395,10 @@ test("mutable vendor assets bypass asset cache and return no-store", async () =>
 test("immutable vendor assets use asset cache and immutable browser policy", async () => {
   const upstreamUrl = "https://cdn.jsdelivr.net/gh/owner/repo@v1.2.3/app.js";
   const indexRecord = await buildAdminLocalIndexUploadRecord(
-    `<!doctype html><html><head><script src="${upstreamUrl}"></script></head><body><div id="app"></div></body></html>`,
+    adminShellDocument({
+      head: `<script src="${upstreamUrl}"></script>`,
+      body: '<div id="app"></div>',
+    }),
     "index.html",
   );
   const manifestEntry = indexRecord.manifest.entries[0];

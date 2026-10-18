@@ -4118,6 +4118,17 @@ function defineAdminShellAssets(dependencies = {}, shell = {}) {
     }
     return false;
   }
+  function hasAdminRemoteShellRuntimeEnhancements(html = "") {
+    let styleFound = false;
+    let scriptFound = false;
+    for (const openingTag of iterateAdminHtmlOpeningTags(html)) {
+      if (!openingTag.attributes.has("data-admin-runtime-enhancements")) continue;
+      if (openingTag.tagName === "style") styleFound = true;
+      else if (openingTag.tagName === "script") scriptFound = true;
+      if (styleFound && scriptFound) return true;
+    }
+    return false;
+  }
   function hasAdminRemoteShellHtmlDocument(html = "") {
     const normalizedHtml = String(html || "").trim();
     if (!normalizedHtml) return false;
@@ -4187,6 +4198,7 @@ function defineAdminShellAssets(dependencies = {}, shell = {}) {
     hasAdminRemoteShellInlineDynamicImport,
     getAdminRemoteShellAssetPolicyViolations,
     hasAdminRemoteShellAppRoot,
+    hasAdminRemoteShellRuntimeEnhancements,
     hasAdminRemoteShellHtmlDocument,
     isAcceptedAdminHtmlDocumentContentType,
     buildAdminRemoteShellVariantEtag,
@@ -4647,6 +4659,8 @@ function defineAdminShellCache(dependencies = {}, shell = {}) {
       throw new Error(`${sourceLabel} payload invalid: html document expected`);
     if (!shell.hasAdminRemoteShellAppRoot(sourceHtml))
       throw new Error(`${sourceLabel} missing #app root`);
+    if (!shell.hasAdminRemoteShellRuntimeEnhancements(sourceHtml))
+      throw new Error(`${sourceLabel} missing runtime enhancements`);
     const assetPolicyViolations = shell.getAdminRemoteShellAssetPolicyViolations(
       sourceHtml,
       sourceUrl,

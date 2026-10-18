@@ -17,6 +17,15 @@ const { adminActions, adminShell } = testPlatform.fetch;
 const { buildAdminLocalIndexUploadRecord } = adminShell;
 const kernel = testPlatform.kv;
 
+// 管理台壳必须带 runtime enhancements；缺失会被 Worker 拒绝，见 validateAdminShellHtmlSource。
+const ADMIN_SHELL_ENHANCEMENT_MARKUP =
+  '<style data-admin-runtime-enhancements="1"></style>' +
+  '<script data-admin-runtime-enhancements="1"></script>';
+
+function adminShellHtml(body = "") {
+  return `<!doctype html><html><head>${ADMIN_SHELL_ENHANCEMENT_MARKUP}</head><body><div id="app">${body}</div></body></html>`;
+}
+
 function createDeferred() {
   let resolve;
   const promise = new Promise((resolvePromise) => {
@@ -370,11 +379,11 @@ test("full backup export rejects payloads that cannot fit the import request lim
 
 test("Worker HTML rollback preserves settings saved after activation", async () => {
   const previousIndex = await buildAdminLocalIndexUploadRecord(
-    '<!doctype html><html><body><div id="app">previous</div></body></html>',
+    adminShellHtml("previous"),
     "index.html",
   );
   const activatedIndex = await buildAdminLocalIndexUploadRecord(
-    '<!doctype html><html><body><div id="app">activated</div></body></html>',
+    adminShellHtml("activated"),
     "index.html",
   );
   const previousConfig = { uiRadiusPx: 8, indexUrl: previousIndex.sourceUrl };
@@ -417,7 +426,7 @@ test("local HTML activation retains only the version referenced by current confi
   try {
     for (let index = 0; index < 8; index += 1) {
       const record = await buildAdminLocalIndexUploadRecord(
-        `<!doctype html><html><body><div id="app">version-${index}</div></body></html>`,
+        adminShellHtml(`version-${index}`),
         "index.html",
       );
       await kernel.persistAdminIndexUpload(record, { env, kv, ctx: null });
@@ -443,7 +452,7 @@ test("local HTML activation retains only the version referenced by current confi
 
 test("stale device settings saves preserve the server-managed admin index", async () => {
   const record = await buildAdminLocalIndexUploadRecord(
-    '<!doctype html><html><body><div id="app">active-admin</div></body></html>',
+    adminShellHtml("active-admin"),
     "index.html",
   );
   const uploadKey = kernel.buildAdminIndexUploadKey(record.revision);
@@ -641,7 +650,7 @@ test("concurrent settings saves cannot both commit the same config revision", as
 
 test("active admin index renders when a remote PoP still sees stale config", async () => {
   const record = await buildAdminLocalIndexUploadRecord(
-    '<!doctype html><html><body><div id="app">active-from-envelope</div></body></html>',
+    adminShellHtml("active-from-envelope"),
     "index.html",
   );
   const { kv } = createKv({
@@ -678,11 +687,11 @@ test("active admin index renders when a remote PoP still sees stale config", asy
 
 test("KV tidy removes orphaned local HTML records and preserves referenced versions", async () => {
   const referencedIndex = await buildAdminLocalIndexUploadRecord(
-    '<!doctype html><html><body><div id="app">referenced</div></body></html>',
+    adminShellHtml("referenced"),
     "index.html",
   );
   const orphanedIndex = await buildAdminLocalIndexUploadRecord(
-    '<!doctype html><html><body><div id="app">orphaned</div></body></html>',
+    adminShellHtml("orphaned"),
     "index.html",
   );
   const referencedKey = kernel.buildAdminIndexUploadKey(referencedIndex.revision);
