@@ -1442,11 +1442,13 @@ test("deploy workflow builds and publishes the frontend as Worker static assets"
   assert.match(wranglerConfig, /\[assets\][\s\S]*html_handling\s*=\s*"none"/);
   assert.match(deployWorkflow, /node-version:\s*24/);
   assert.match(deployWorkflow, /run:\s*npm ci/);
-  assert.match(deployWorkflow, /run:\s*npm run build:frontend/);
+  assert.match(deployWorkflow, /run:\s*npm run check/);
+  assert.match(deployWorkflow, /run:\s*npm run build:cdn/);
   assert.match(deployWorkflow, /- "frontend\/\*\*"/);
-  assert.ok(deployWorkflow.indexOf("npm ci") < deployWorkflow.indexOf("npm run build:frontend"));
+  assert.ok(deployWorkflow.indexOf("npm ci") < deployWorkflow.indexOf("npm run check"));
+  assert.ok(deployWorkflow.indexOf("npm run check") < deployWorkflow.indexOf("npm run build:cdn"));
   assert.ok(
-    deployWorkflow.indexOf("npm run build:frontend") <
+    deployWorkflow.indexOf("npm run build:cdn") <
       deployWorkflow.indexOf("cloudflare/wrangler-action@v3"),
   );
 });
