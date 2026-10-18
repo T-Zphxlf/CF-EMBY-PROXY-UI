@@ -42,6 +42,8 @@ export function createTestApplication() {
     cache: cacheManager,
     fetch: Object.freeze({
       adminActions: kernel.adminActionHandlers,
+      adminActionNames: kernel.adminActionNames,
+      resolveAdminAction: kernel.resolveAdminAction,
       adminShell: shellService,
       fetchRequest,
       logger,

@@ -15397,6 +15397,9 @@ function defineDatabaseAdminMethods(dependencies = {}) {
   const registry = defineAdminActionRegistry(dependencies);
   return {
     adminActionHandlers: registry.handlers,
+    // 只读 introspection：契约审计要判断“这个名字能否解析”，别名走同一条路径。
+    adminActionNames: registry.names,
+    resolveAdminAction: registry.resolve,
   };
 }
 //#endregion

@@ -54,6 +54,7 @@ const requiredChecks = [
       "tests/d1-schema.test.mjs",
       "tests/worker-bundle-smoke.test.mjs",
       "tests/frontend-runtime-enhancements.test.mjs",
+      "tests/admin-contract-parity.test.mjs",
     ],
     cwd: repositoryRoot,
   },

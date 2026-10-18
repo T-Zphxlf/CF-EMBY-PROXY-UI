@@ -10169,7 +10169,12 @@ function ap(o = {}) {
   return r;
 }
 function np(o = {}) {
-  return { adminActionHandlers: ap(o).handlers };
+  const e = ap(o);
+  return {
+    adminActionHandlers: e.handlers,
+    adminActionNames: e.names,
+    resolveAdminAction: e.resolve
+  };
 }
 function Xe(o, e) {
   const t = B(o) ? o : {}, r = B(e) ? e : {}, a = { ...t };
