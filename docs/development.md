@@ -30,9 +30,9 @@ npm.cmd run --workspace frontend sync:admin-runtime
 npm.cmd run --workspace frontend build
 ```
 
-同步脚本把 `admin-runtime.template.html` 的占位符（`__ADMIN_BOOTSTRAP_JSON__`、`__ADMIN_APP_ROOT__`、`__APP_VERSION__`）替换为 bootstrap、`#app` 和版本号，注入 `admin-runtime-enhancements.mjs` 的 style/script，再跑一遍 `applyHeadProbeContract` 改写编译产物（节点探测 HEAD→GET、注入 `hedgeProbePreferGet`），写出 `frontend/index.html`。Vite 再将其输出到 `frontend/dist/index.html`。不要直接改这两个生成 HTML；模板里看起来是 HEAD 语义的节点探测 UI 会被 sync 改写，改那部分必须先读 `applyHeadProbeContract`（说明见 `docs/architecture.md` §4）。
+同步脚本把 `admin-runtime.template.html` 的占位符（`__ADMIN_BOOTSTRAP_JSON__`、`__ADMIN_APP_ROOT__`、`__APP_VERSION__`）替换为 bootstrap、`#app` 和版本号，注入 `admin-runtime-enhancements.mjs` 的 style/script，再跑一遍 `applyHeadProbeContract` 改写编译产物（节点探测 HEAD→GET、注入 `hedgeProbePreferGet`），写出 `frontend/index.html`。随后 `publish-dist.mjs` 把组合产物拷贝到 `frontend/dist/index.html`；管理端是单文件交付，`dist/` 只允许存在这一个文件，所以构建不再经过 Vite（模板没有 module script，打包只会原样搬运）。不要直接改这两个生成 HTML；模板里看起来是 HEAD 语义的节点探测 UI 会被 sync 改写，改那部分必须先读 `applyHeadProbeContract`（说明见 `docs/architecture.md` §4）。
 
-`wrangler.toml` 将 `frontend/dist` 声明为 `ASSETS` 静态资产目录。GitHub Actions 部署会先执行 `npm ci` 和 `npm run build:frontend`，再由 Wrangler 将前端与 Worker 一起上传；Worker 在没有 KV/远端管理端 HTML 配置时直接使用该构建产物。
+`wrangler.toml` 将 `frontend/dist` 声明为 `ASSETS` 静态资产目录。GitHub Actions 部署会先执行 `npm ci`、`npm run check` 和 `npm run build:cdn`，再由 Wrangler 将前端与 Worker 一起上传；Worker 在没有 KV/远端管理端 HTML 配置时直接使用该构建产物。`npm run check` 挡在部署前，同步漂移、CDN 资源策略、2 MiB 壳上限和 `worker.js` 新鲜度都会在那里失败。
 
 `frontend/src/` 的 Vue 文件由 `node scripts/check-frontend-sources.mjs` 编译检查，但当前 `frontend/index.html` 没有从 `src/App.vue` 导入的 module script。该目录是线上管理台分叉前的可读源码，**不要删除**：改动不改变线上 UI，但它是仓库内唯一可读的管理台实现；规则、证据与禁令见 `frontend/src/README.md`。
 
@@ -75,7 +75,7 @@ node --test tests/*.test.mjs
 - `tests/config-kv-safety.test.mjs`：KV 写入回滚、revision、遗留设置快照清理、密钥脱敏、导入、HTML 激活和整理计划。
 - `tests/d1-schema.test.mjs`：当前 D1 schema 初始化、兼容检查、索引和整理。
 - `tests/frontend-runtime-enhancements.test.mjs`：管理端增强脚本、设置保存、仪表盘、DNS、备份、CDN 资源和开发服务器约束。
-- `tests/admin-contract-parity.test.mjs`：管理端跨层契约——前端调用的 action 必须能在 Worker registry 解析、boot 协议符号在壳层/loader/兜底壳三处一致、`frontend/src` 参考源仍只调用可解析的 action 并保持 5 个主视图与 8 个设置分区。
+- `tests/admin-contract-parity.test.mjs`：管理端跨层契约——前端调用的 action 必须能在 Worker registry 解析、boot 协议符号在壳层/loader/兜底壳三处一致、`frontend/src` 参考源仍只调用可解析的 action 并保持 5 个主视图与 8 个设置分区，以及真实 `frontend/dist/index.html` 能通过 Worker 的壳层校验（含 2 MiB 上限与资产策略）。
 - `tests/worker-bundle-smoke.test.mjs`：生成 Worker bundle 的入口和 Cloudflare handler 形状。
 - `tests/fixtures/worker-architecture/negative-cases.json`：架构检查器的反例夹具。
 

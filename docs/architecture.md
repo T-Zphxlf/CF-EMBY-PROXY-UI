@@ -96,14 +96,14 @@ flowchart TD
 
 ### 管理端事实来源与组合链
 
-当前 Vite 入口是 `frontend/index.html`，而该文件没有任何 module script：bootstrap 占位符在 sync 阶段就已替换，Vite 只是把它当静态 HTML 原样输出到 `frontend/dist/`，不会编译 `frontend/src/`。生产 UI 的实际链路是：
+当前 `frontend/index.html` 没有任何 module script：bootstrap 占位符在 sync 阶段就已替换，构建只是把组合产物拷贝到 `frontend/dist/`（`publish-dist.mjs`），既不编译 `frontend/src/`，也不经过打包器。生产 UI 的实际链路是：
 
 ```text
 frontend/admin-runtime.template.html
   + frontend/scripts/admin-runtime-enhancements.mjs
   -> frontend/scripts/sync-admin-runtime.mjs
   -> frontend/index.html
-  -> frontend/dist/index.html (Vite build)
+  -> frontend/dist/index.html (publish-dist 拷贝)
   -> Wrangler Static Assets (`ASSETS`) / Worker 管理端 shell 投递
 ```
 
@@ -139,7 +139,7 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 - Cloudflare 绑定和 Cron 位于 `wrangler.toml`：KV binding `ENI_KV`、D1 binding `DB`、静态前端 binding `ASSETS`，Cron 为每小时一次。
 - Worker 环境变量包括 `HOST`、可选 `LEGACY_HOST`、`ADMIN_PATH`、`JWT_SECRET`、`ADMIN_PASS` 以及兼容的绑定名称。
 - 应用版本号唯一来源是 `worker/core/build-info.js` 的 `APP_VERSION`；Worker 落地页标题与管理端标题/徽章占位符 `__APP_VERSION__` 都由它派生。发布时改这一处，并同步 `README.md`、`AGENTS.md` 的版本字样，`npm.cmd run check` 的 version consistency 项会校验三者一致。
-- 前端环境变量位于 `frontend/.env.example`，主要控制 API base、admin path、CDN base、release channel 和开发代理目标。
+- 前端环境变量位于 `frontend/.env.example`，主要控制 API base、admin path、release channel 和开发代理目标；CDN 地址由 Worker 的 `indexUrl`/远端壳配置决定，不经过前端构建。
 - 前端外部 vendor 资源由 CDN path 检查器约束；不要在生产模板中引入 inline dynamic import 或未声明的相对发布资源。
 
 ## 8. 设置项与绑定/键映射

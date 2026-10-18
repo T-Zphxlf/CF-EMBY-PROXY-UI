@@ -373,7 +373,7 @@ Worker 作为公网入口，外部只能看到 Cloudflare 边缘节点，而不�
    - `CLOUDFLARE_ACCOUNT_ID`：你的 Cloudflare Account ID
    - `CLOUDFLARE_API_TOKEN`：使用 **Edit Cloudflare Workers** 模板创建的 API Token
 10. 将仓库中的 [deploy-worker.yml](./.github/workflows/deploy-worker.yml) 提交并推送到 `main` 或 `master` 分支
-11. GitHub Actions 会使用 Node 24 执行 `npm ci` 和 `npm run build:frontend`，随后由 Wrangler 按 `wrangler.toml` 构建 `worker.js`，并将 Worker 与 `frontend/dist` 一起部署到 Cloudflare Workers
+11. GitHub Actions 会使用 Node 24 执行 `npm ci`、`npm run check` 和 `npm run build:cdn`，随后由 Wrangler 按 `wrangler.toml` 构建 `worker.js`，并将 Worker 与 `frontend/dist` 一起部署到 Cloudflare Workers
 12. 如果你的默认部署分支不是 `main` 或 `master`，请先修改 `.github/workflows/deploy-worker.yml` 里的 `branches` 配置
 13. 首次部署后，后续每次向已配置分支 `push` 新提交，GitHub Actions 都会自动重新部署
 
