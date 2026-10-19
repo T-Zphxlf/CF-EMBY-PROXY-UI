@@ -20540,7 +20540,9 @@ function appendMediaRedirectAuthToUrl(targetUrl, headersOrPolicy, mediaAuthMode 
       : { auth: extractMediaRedirectAuth(headersOrPolicy) }
     ).auth || {};
   const effectiveMediaAuthMode = normalizeNodeMediaAuthMode(mediaAuthMode);
-  // Jellyfin 10.11+ only reads ApiKey once legacy authorization is disabled (default off since 12.0); Emby and legacy Jellyfin read api_key.
+  // 依据 Jellyfin 12.2 的 AuthorizationContext：ApiKey 查询名不受 EnableLegacyAuthorization 限制
+  // （2026-05-31 的迁移例程已把它默认关闭），而 api_key 查询名与 X-Emby-Token 头只在 legacy 开启时生效；
+  // Emby 官方 API-Key 文档则只认 api_key 查询与 X-Emby-Token 头。
   // auto 无法确定上游版本，同时携带两种名字；上游忽略它不读的那个。
   const tokenQueryKeys =
     effectiveMediaAuthMode === "jellyfin"
@@ -20554,6 +20556,9 @@ function appendMediaRedirectAuthToUrl(targetUrl, headersOrPolicy, mediaAuthMode 
     for (const tokenQueryKey of tokenQueryKeys)
       if (!safeUrl.searchParams.has(tokenQueryKey))
         safeUrl.searchParams.set(tokenQueryKey, auth.token);
+  // shortcut: DeviceId 查询参数不在 Emby 官方文档与 Jellyfin 源码的鉴权路径内（两家都只从
+  // Authorization 头里取），这里只是为了老客户端仍能带上设备身份；若上游开始校验跳转 URL 的
+  // 未知参数或收紧查询鉴权，就删掉这段。
   if (auth.deviceId && !hasRedirectQueryAlias(safeUrl, MEDIA_REDIRECT_DEVICE_QUERY_KEYS))
     safeUrl.searchParams.set("DeviceId", auth.deviceId);
   return safeUrl;
@@ -20565,6 +20570,8 @@ function buildMediaAuthorizationFromToken(scheme, token = "") {
   if (!safeToken) return "";
   return `${scheme === "emby" ? "Emby" : "MediaBrowser"} Token="${safeToken}"`;
 }
+// shortcut: 把两个 token 头名当查询参数读取属于旧客户端兼容，两家文档都没定义；若上游明确不再
+// 支持查询载体，就只保留 api_key 与 ApiKey。
 var QUERY_MEDIA_AUTH_TOKEN_KEYS = ["api_key", "ApiKey", "X-Emby-Token", "X-MediaBrowser-Token"];
 // 查询参数可携带 CR/LF 或非 Latin-1 字符，直接写进请求头会抛异常；这类值不是合法 token，忽略。
 function isSafeMediaAuthTokenValue(value = "") {
