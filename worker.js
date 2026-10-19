@@ -8003,11 +8003,12 @@ function hm(o, e) {
     return !1;
   }
 }
-function ym(o) {
+function ym(o, e = null) {
   if (!/^https?:\/\//i.test(o)) return o;
+  const t = e instanceof URL ? e : null;
   try {
-    const e = new URL(o);
-    return !e.username && !e.password ? o : (e.username = "", e.password = "", e.toString());
+    const r = new URL(o);
+    return !r.username && !r.password || t && r.origin === t.origin && r.username === t.username && r.password === t.password ? o : (r.username = "", r.password = "", r.toString());
   } catch {
     return o;
   }
@@ -17616,7 +17617,7 @@ function ch(o = {}, e = {}) {
     },
     applyProxyRedirectHeaders(r, a, n, s, i, c, l, d = {}) {
       const u = (h) => {
-        const g = ym(h instanceof URL ? h.toString() : String(h || "")), y = d.externalRedirectAuth;
+        const g = ym(h instanceof URL ? h.toString() : String(h || ""), n), y = d.externalRedirectAuth;
         if (!y || y.canDirect !== !0 || !/^https?:\/\//i.test(g)) return g;
         try {
           const _ = new URL(g);

@@ -11850,12 +11850,21 @@ function isExternalClientRedirectLocation(location, workerOrigin) {
     return false;
   }
 }
-function stripClientRedirectCredentials(location) {
-  // 上游 Location 里的 userinfo 会随客户端跳转暴露给浏览器与 Referer，下发前一律清掉。
+function stripClientRedirectCredentials(location, trustedBase = null) {
+  // 上游 Location 里的 userinfo 会随客户端跳转暴露给浏览器与 Referer，下发前清掉；
+  // 节点基址里配置的凭据属于运营方自己的信任边界，只有与基址完全一致时才保留。
   if (!/^https?:\/\//i.test(location)) return location;
+  const base = trustedBase instanceof URL ? trustedBase : null;
   try {
     const url = new URL(location);
     if (!url.username && !url.password) return location;
+    if (
+      base &&
+      url.origin === base.origin &&
+      url.username === base.username &&
+      url.password === base.password
+    )
+      return location;
     url.username = "";
     url.password = "";
     return url.toString();
@@ -28647,6 +28656,7 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
       const finalizeClientLocation = (target) => {
         const value = stripClientRedirectCredentials(
           target instanceof URL ? target.toString() : String(target || ""),
+          activeTargetBase,
         );
         const auth = options.externalRedirectAuth;
         if (!auth || auth.canDirect !== true || !/^https?:\/\//i.test(value)) return value;

@@ -9369,6 +9369,36 @@ test("client-visible redirect Locations drop upstream credentials", () => {
   assert.match(authorizedLocation, /[?&]ApiKey=tok/);
 });
 
+test("client redirects keep node-base credentials but drop injected ones", () => {
+  const base = new URL("https://user:pass@node.test/emby");
+  const apply = (location) => {
+    const headers = new Headers({ Location: location });
+    proxyService.applyProxyRedirectHeaders(
+      headers,
+      new Response(null, { status: 302, headers: { Location: location } }),
+      base,
+      "node",
+      "secret",
+      new URL(location),
+      null,
+      {},
+    );
+    return headers.get("Location");
+  };
+
+  // 节点基址自带凭据：直连跳转沿用运营方配置的凭据，否则需要 basic 鉴权的节点会 401。
+  assert.equal(
+    apply("https://user:pass@node.test/Videos/1/stream"),
+    "https://user:pass@node.test/Videos/1/stream",
+  );
+  // 凭据与基址不一致、或目标换到别的主机：一律剥离。
+  assert.equal(
+    apply("https://attacker:other@node.test/Videos/1/stream"),
+    "https://node.test/Videos/1/stream",
+  );
+  assert.equal(apply("https://user:pass@evil.test/x"), "https://evil.test/x");
+});
+
 test("path-like redirect Locations normalize to the same cross-origin target", () => {
   // 这些写法都被 URL 规范解析成同一个绝对跨域 URL：不能因为开头像路径就转成同源代理路径。
   for (const raw of ["//evil.test/x", "/\\evil.test/x", "\\\\evil.test/x", "\t//evil.test/x"]) {
