@@ -11850,6 +11850,19 @@ function isExternalClientRedirectLocation(location, workerOrigin) {
     return false;
   }
 }
+function stripClientRedirectCredentials(location) {
+  // 上游 Location 里的 userinfo 会随客户端跳转暴露给浏览器与 Referer，下发前一律清掉。
+  if (!/^https?:\/\//i.test(location)) return location;
+  try {
+    const url = new URL(location);
+    if (!url.username && !url.password) return location;
+    url.username = "";
+    url.password = "";
+    return url.toString();
+  } catch {
+    return location;
+  }
+}
 function resolveExternalRedirectAuth(execution, transport) {
   // 只有媒体请求、且客户端仅用查询参数鉴权时，才把 token 补到外部跳转 URL：
   // 头与 Cookie 无法经浏览器跳转携带，也不能把凭据写到外部主机。
@@ -23521,12 +23534,14 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
       let protocolFallbackRetryFailed = upstream.protocolFallbackRetryFailed === true;
       let proxiedExternalRedirect = false;
       let directRedirectUrl = null;
+      // 跟随预算：跳数用尽后把最后的 3xx 交给客户端，避免在 Worker 内无限跟随。
+      const maxRedirectHops = 8;
       let redirectHop = 0;
       let redirectMethod = execution.requestMethod;
       let redirectBodyMode = transport.preparedBodyMode;
       let redirectBody = transport.preparedBody;
       execution.defaultOutboundColo = resolveResponseColoCode(response) || "";
-      while (response.status >= 300 && response.status < 400 && redirectHop < 8) {
+      while (response.status >= 300 && response.status < 400 && redirectHop < maxRedirectHops) {
         const currentRedirectStatus = Number(response.status) || 0;
         const nextUrl = resolveRedirectTarget(
           response.headers.get("Location"),
@@ -23772,7 +23787,8 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
             finalUrl || activeTargetBase,
           );
           kernel.finalizeRedirectTrace(redirectTrace, {
-            terminalMode: redirectHop >= 8 ? "redirect_limit" : "upstream_redirect_passthrough",
+            terminalMode:
+              redirectHop >= maxRedirectHops ? "redirect_limit" : "upstream_redirect_passthrough",
             finalStatus,
             finalHost:
               finalTarget?.hostname || finalUrl?.hostname || activeTargetBase?.hostname || "",
@@ -28622,7 +28638,9 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
       options = {},
     ) {
       const finalizeClientLocation = (target) => {
-        const value = target instanceof URL ? target.toString() : String(target || "");
+        const value = stripClientRedirectCredentials(
+          target instanceof URL ? target.toString() : String(target || ""),
+        );
         const auth = options.externalRedirectAuth;
         if (!auth || auth.canDirect !== true || !/^https?:\/\//i.test(value)) return value;
         try {

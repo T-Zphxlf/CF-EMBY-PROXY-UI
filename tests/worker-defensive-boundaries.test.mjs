@@ -9331,3 +9331,103 @@ test("cross-origin redirect without redirectable auth fails closed instead of le
   assert.equal(allowed.status, 302);
   assert.match(String(allowed.headers.get("Location")), /[?&]ApiKey=tok/);
 });
+
+test("client-visible redirect Locations drop upstream credentials", () => {
+  const raw = "https://user:pass@cdn.other.test/Videos/1/stream";
+  const passthrough = new Headers({ Location: raw });
+  proxyService.applyProxyRedirectHeaders(
+    passthrough,
+    new Response(null, { status: 302, headers: { Location: raw } }),
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/Videos/1/stream"),
+    {},
+  );
+  assert.equal(passthrough.get("Location"), "https://cdn.other.test/Videos/1/stream");
+
+  const withAuth = new Headers({ Location: raw });
+  proxyService.applyProxyRedirectHeaders(
+    withAuth,
+    new Response(null, { status: 302, headers: { Location: raw } }),
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/Videos/1/stream"),
+    {
+      externalRedirectAuth: {
+        policy: { auth: { token: "tok", deviceId: "" } },
+        mode: "jellyfin",
+        canDirect: true,
+      },
+    },
+  );
+  const authorizedLocation = String(withAuth.get("Location"));
+  assert.doesNotMatch(authorizedLocation, /user:pass/);
+  assert.match(authorizedLocation, /[?&]ApiKey=tok/);
+});
+
+test("path-like redirect Locations normalize to the same cross-origin target", () => {
+  // 这些写法都被 URL 规范解析成同一个绝对跨域 URL：不能因为开头像路径就转成同源代理路径。
+  for (const raw of ["//evil.test/x", "/\\evil.test/x", "\\\\evil.test/x", "\t//evil.test/x"]) {
+    const headers = new Headers({ Location: raw });
+    proxyService.applyProxyRedirectHeaders(
+      headers,
+      new Response(null, { status: 302, headers: { Location: raw } }),
+      new URL("https://origin.example"),
+      "node",
+      "secret",
+      null,
+      new URL("https://origin.example/Videos/1/stream"),
+      { workerOrigin: "https://worker.test" },
+    );
+    assert.equal(headers.get("Location"), "https://evil.test/x", raw);
+  }
+
+  // 单个反斜杠是相对路径，仍然走同源代理路径。
+  const relative = new Headers({ Location: "\\evil.test/x" });
+  proxyService.applyProxyRedirectHeaders(
+    relative,
+    new Response(null, { status: 302, headers: { Location: "\\evil.test/x" } }),
+    new URL("https://origin.example"),
+    "node",
+    "secret",
+    null,
+    new URL("https://origin.example/Videos/1/stream"),
+    { workerOrigin: "https://worker.test" },
+  );
+  assert.equal(relative.get("Location"), "/node/secret/evil.test/x");
+});
+
+test("backslash-normalized cross-origin redirects still fail closed", async () => {
+  const handle = async (headers) =>
+    withWorkerGlobals(
+      {
+        fetch: async () =>
+          new Response(null, {
+            status: 302,
+            // 绕过尝试：看起来像路径，实际会被规范成 https://evil.test/x。
+            headers: { Location: "/\\evil.test/x" },
+          }),
+      },
+      async () => {
+        const request = new Request("https://worker.test/node/secret/Videos/1/stream", { headers });
+        return proxyService.handle(
+          request,
+          { target: "https://origin.test", mainVideoStreamMode: "proxy" },
+          "/Videos/1/stream",
+          "node",
+          "secret",
+          {},
+          { waitUntil() {} },
+          { requestUrl: new URL(request.url), runtimeConfig: { rateLimitRpm: 0 } },
+        );
+      },
+    );
+
+  const blocked = await handle({ Cookie: "emby_session=abc" });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.headers.get("Location"), null);
+});
