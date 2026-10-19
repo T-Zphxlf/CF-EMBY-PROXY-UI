@@ -12,7 +12,7 @@ const versionLabel = `V${APP_VERSION}`;
 const expectations = [
   { file: "README.md", needle: `version-${versionLabel}-`, description: "版本徽章" },
   { file: "README.md", needle: `当前 **${versionLabel}**`, description: "版本摘要" },
-  { file: "AGENTS.md", needle: `## ${versionLabel}版本`, description: "版本标题" },
+  { file: "AGENTS.md", needle: `当前 **${versionLabel}**`, description: "版本指针" },
 ];
 
 const failures = [];
