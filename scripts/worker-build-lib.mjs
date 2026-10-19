@@ -1,7 +1,8 @@
 import { build } from "vite";
 import { fileURLToPath } from "node:url";
 
-export const MAX_WORKER_BUNDLE_BYTES = 1_048_576;
+// 硬守卫 1.5 MB，工作目标 1.1 MB：两者相差的余量用于容纳计划内的增长，目标值不在此处强制。
+export const MAX_WORKER_BUNDLE_BYTES = 1_500_000;
 
 /**
  * Build the Worker and enforce its single-module delivery contract.
