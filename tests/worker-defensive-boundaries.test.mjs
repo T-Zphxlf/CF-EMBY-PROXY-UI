@@ -7882,6 +7882,74 @@ test("filtered access logs skip diagnostic construction in buildSuccessResponse"
     proxyService.buildStructuredLogDetail = originalBuildStructuredLogDetail;
   }
 });
+
+test("cache-hit and throttle paths build detailJson only when the log is written", async () => {
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
+  let detailBuildCount = 0;
+  let loggedCount = 0;
+  proxyService.buildStructuredLogDetail = (...args) => {
+    detailBuildCount += 1;
+    return originalBuildStructuredLogDetail(...args);
+  };
+  proxyService.recordAccessLog = () => {
+    loggedCount += 1;
+  };
+
+  const cachedResponse = () =>
+    new Response("cached", { status: 200, headers: { "Content-Type": "image/png" } });
+  const cacheExecution = (config) => ({
+    request: new Request("https://worker.test/alpha/Items/1/Images/Primary"),
+    requestMethod: "GET",
+    proxyPath: "/Items/1/Images/Primary",
+    requestTraits: { isImage: true, isMetadataCacheable: true },
+    metadataCacheKey: new Request("https://worker-cache.test/item?identity=abc"),
+    metadataCache: {
+      async match() {
+        return cachedResponse();
+      },
+    },
+    dynamicCors: {},
+    finalOrigin: "*",
+    currentConfig: config,
+  });
+  const throttleExecution = (config) => ({
+    requestMethod: "POST",
+    proxyPath: "/Sessions/Playing/Progress",
+    requestTraits: { isPlaybackSessionControlRequest: true },
+    finalOrigin: "*",
+    progressForwardMode: "throttle",
+    videoProgressForwardIntervalSec: 10,
+    currentConfig: config,
+  });
+
+  try {
+    await proxyService.tryServeMetadataCache(
+      cacheExecution({ logEnabled: true, logWriteMode: "all", logWriteImagePoster: false }),
+    );
+    proxyService.buildPlaybackProgressThrottleResponse(
+      throttleExecution({ logEnabled: true, logWriteMode: "error" }),
+    );
+    assert.equal(
+      detailBuildCount,
+      0,
+      "filtered cache hit and 204 throttle must not build detailJson",
+    );
+    assert.equal(loggedCount, 0);
+
+    await proxyService.tryServeMetadataCache(
+      cacheExecution({ logEnabled: true, logWriteMode: "all", logWriteImagePoster: true }),
+    );
+    proxyService.buildPlaybackProgressThrottleResponse(
+      throttleExecution({ logEnabled: true, logWriteMode: "all" }),
+    );
+    assert.equal(detailBuildCount, 2, "enabled cache hit and throttle still build detailJson");
+    assert.equal(loggedCount, 2);
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+    proxyService.buildStructuredLogDetail = originalBuildStructuredLogDetail;
+  }
+});
 test("oversized PlaybackInfo responses are not retained in isolate memory", async () => {
   isolateState.PlaybackInfoResponseCache.clear();
   const execution = {

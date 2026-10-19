@@ -23044,40 +23044,46 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
             imageCacheMaxAge: execution.imageCacheMaxAge,
           },
         );
-        const cacheHitAccessLogPayload = {
-          statusCode: cachedResponse.status,
-          category: kernel.classifyProxyLogCategory(execution.requestTraits),
-          errorDetail: kernel.appendLogDiagnosticDetail(
-            kernel.extractProxyErrorDetail(cachedResponse),
-            kernel.buildStreamDiagnosticDetail(execution, cachedResponse, {
-              flow: "cache_hit",
-              source: "worker_cache",
-              cacheStatus: "WORKER_CACHE",
-            }),
-          ),
-          detailJson: kernel.buildStructuredLogDetail(
-            execution,
-            { statusCode: cachedResponse.status },
-            {
-              deliveryMode: "proxy",
-              redirectMode: "worker_cache",
-              decisionReason: "worker_cache_hit",
-              protocolFailureReason:
-                Number(cachedResponse.status) >= 400
-                  ? kernel.classifyProtocolFailureReason(
-                      kernel.extractProxyErrorDetail(cachedResponse) ||
-                        cachedResponse.statusText ||
-                        "",
-                      { upstreamStatus: cachedResponse.status },
-                    )
-                  : null,
-              upstreamStatus: cachedResponse.status,
-            },
-          ),
-          outboundColo: "",
-        };
-        if (kernel.shouldRecordAccessLog(execution, cacheHitAccessLogPayload))
-          kernel.recordAccessLog(execution, cacheHitAccessLogPayload);
+        if (
+          kernel.shouldRecordAccessLog(execution, {
+            statusCode: cachedResponse.status,
+            category: kernel.classifyProxyLogCategory(execution.requestTraits),
+          })
+        )
+          kernel.recordAccessLog(execution, {
+            statusCode: cachedResponse.status,
+            category: kernel.classifyProxyLogCategory(execution.requestTraits),
+            errorDetail: kernel.appendLogDiagnosticDetail(
+              kernel.appendLogDiagnosticDetail(
+                kernel.extractProxyErrorDetail(cachedResponse),
+                kernel.buildStreamDiagnosticDetail(execution, cachedResponse, {
+                  flow: "cache_hit",
+                  source: "worker_cache",
+                  cacheStatus: "WORKER_CACHE",
+                }),
+              ),
+            ),
+            detailJson: kernel.buildStructuredLogDetail(
+              execution,
+              { statusCode: cachedResponse.status },
+              {
+                deliveryMode: "proxy",
+                redirectMode: "worker_cache",
+                decisionReason: "worker_cache_hit",
+                protocolFailureReason:
+                  Number(cachedResponse.status) >= 400
+                    ? kernel.classifyProtocolFailureReason(
+                        kernel.extractProxyErrorDetail(cachedResponse) ||
+                          cachedResponse.statusText ||
+                          "",
+                        { upstreamStatus: cachedResponse.status },
+                      )
+                    : null,
+                upstreamStatus: cachedResponse.status,
+              },
+            ),
+            outboundColo: "",
+          });
         return new Response(cachedResponse.body, {
           status: cachedResponse.status,
           statusText: cachedResponse.statusText,
@@ -26567,35 +26573,33 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
           imageCacheMaxAge: execution.imageCacheMaxAge,
         },
       );
-      const shouldLogCacheHit = kernel.shouldRecordAccessLog(execution, {
-        statusCode: cachedResponse.status,
-        category: kernel.classifyProxyLogCategory(execution.requestTraits),
-      });
-      const errorDetail = !shouldLogCacheHit
-        ? ""
-        : kernel.appendLogDiagnosticDetail(
+      if (
+        kernel.shouldRecordAccessLog(execution, {
+          statusCode: cachedResponse.status,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+        })
+      )
+        kernel.recordAccessLog(execution, {
+          statusCode: cachedResponse.status,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+          errorDetail: kernel.appendLogDiagnosticDetail(
             kernel.extractProxyErrorDetail(cachedResponse),
             kernel.buildRuntimeDiagnosticDetail(execution),
-          );
-      const cacheHitAccessLogPayload = {
-        statusCode: cachedResponse.status,
-        category: kernel.classifyProxyLogCategory(execution.requestTraits),
-        errorDetail,
-        detailJson: kernel.buildStructuredLogDetail(
-          execution,
-          { statusCode: cachedResponse.status },
-          {
-            deliveryMode: "proxy",
-            redirectMode: "playback_info_cache",
-            decisionReason: "playback_info_cache_hit",
-            playbackInfoCache: execution.playbackInfoCacheState,
-            playbackInfoCacheTtlSec: execution.playbackInfoCacheTtlSec,
-            upstreamStatus: cachedResponse.status,
-          },
-        ),
-        outboundColo: "",
-      };
-      if (shouldLogCacheHit) kernel.recordAccessLog(execution, cacheHitAccessLogPayload);
+          ),
+          detailJson: kernel.buildStructuredLogDetail(
+            execution,
+            { statusCode: cachedResponse.status },
+            {
+              deliveryMode: "proxy",
+              redirectMode: "playback_info_cache",
+              decisionReason: "playback_info_cache_hit",
+              playbackInfoCache: execution.playbackInfoCacheState,
+              playbackInfoCacheTtlSec: execution.playbackInfoCacheTtlSec,
+              upstreamStatus: cachedResponse.status,
+            },
+          ),
+          outboundColo: "",
+        });
       return new Response(execution.requestMethod === "HEAD" ? null : cachedBodyText, {
         status: cachedResponse.status,
         statusText: cachedResponse.statusText,
@@ -27020,32 +27024,30 @@ function definePlaybackProgressRelayMethods(dependencies = {}, kernel = {}) {
     },
     buildPlaybackProgressThrottleResponse(execution) {
       const responseHeaders = kernel.buildEdgeResponseHeaders(execution.finalOrigin);
-      const shouldLogThrottle = kernel.shouldRecordAccessLog(execution, {
-        statusCode: 204,
-        category: kernel.classifyProxyLogCategory(execution.requestTraits),
-      });
-      const errorDetail = shouldLogThrottle
-        ? kernel.buildProgressRelayDiagnosticDetail(execution)
-        : "";
-      const throttleAccessLogPayload = {
-        statusCode: 204,
-        category: kernel.classifyProxyLogCategory(execution.requestTraits),
-        errorDetail,
-        detailJson: kernel.buildStructuredLogDetail(
-          execution,
-          { statusCode: 204 },
-          {
-            deliveryMode: "proxy",
-            redirectMode: "progress_relay",
-            decisionReason: execution.progressForwardMode || "progress_relay_throttled",
-            progressRelayMode: execution.progressForwardMode,
-            progressIntervalSec: execution.videoProgressForwardIntervalSec,
-            upstreamStatus: 204,
-          },
-        ),
-        outboundColo: execution.defaultOutboundColo || "",
-      };
-      if (shouldLogThrottle) kernel.recordAccessLog(execution, throttleAccessLogPayload);
+      if (
+        kernel.shouldRecordAccessLog(execution, {
+          statusCode: 204,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+        })
+      )
+        kernel.recordAccessLog(execution, {
+          statusCode: 204,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+          errorDetail: kernel.buildProgressRelayDiagnosticDetail(execution),
+          detailJson: kernel.buildStructuredLogDetail(
+            execution,
+            { statusCode: 204 },
+            {
+              deliveryMode: "proxy",
+              redirectMode: "progress_relay",
+              decisionReason: execution.progressForwardMode || "progress_relay_throttled",
+              progressRelayMode: execution.progressForwardMode,
+              progressIntervalSec: execution.videoProgressForwardIntervalSec,
+              upstreamStatus: 204,
+            },
+          ),
+          outboundColo: execution.defaultOutboundColo || "",
+        });
       return new Response(null, {
         status: 204,
         statusText: "No Content",

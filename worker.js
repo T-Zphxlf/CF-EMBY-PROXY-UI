@@ -14647,14 +14647,18 @@ function zg(o = {}, e = {}) {
           enableH3: t.enableH3,
           forceH1: t.forceH1,
           imageCacheMaxAge: t.imageCacheMaxAge
-        }), s = {
+        });
+        return e.shouldRecordAccessLog(t, {
+          statusCode: a.status,
+          category: e.classifyProxyLogCategory(t.requestTraits)
+        }) && e.recordAccessLog(t, {
           statusCode: a.status,
           category: e.classifyProxyLogCategory(t.requestTraits),
-          errorDetail: e.appendLogDiagnosticDetail(e.extractProxyErrorDetail(a), e.buildStreamDiagnosticDetail(t, a, {
+          errorDetail: e.appendLogDiagnosticDetail(e.appendLogDiagnosticDetail(e.extractProxyErrorDetail(a), e.buildStreamDiagnosticDetail(t, a, {
             flow: "cache_hit",
             source: "worker_cache",
             cacheStatus: "WORKER_CACHE"
-          })),
+          }))),
           detailJson: e.buildStructuredLogDetail(t, { statusCode: a.status }, {
             deliveryMode: "proxy",
             redirectMode: "worker_cache",
@@ -14663,8 +14667,7 @@ function zg(o = {}, e = {}) {
             upstreamStatus: a.status
           }),
           outboundColo: ""
-        };
-        return e.shouldRecordAccessLog(t, s) && e.recordAccessLog(t, s), new Response(a.body, {
+        }), new Response(a.body, {
           status: a.status,
           statusText: a.statusText,
           headers: n
@@ -16510,13 +16513,14 @@ function th(o = {}, e = {}) {
         enableH3: a.enableH3,
         forceH1: a.forceH1,
         imageCacheMaxAge: a.imageCacheMaxAge
-      }), m = e.shouldRecordAccessLog(a, {
+      });
+      return e.shouldRecordAccessLog(a, {
         statusCode: d.status,
         category: e.classifyProxyLogCategory(a.requestTraits)
-      }), p = m ? e.appendLogDiagnosticDetail(e.extractProxyErrorDetail(d), e.buildRuntimeDiagnosticDetail(a)) : "", h = {
+      }) && e.recordAccessLog(a, {
         statusCode: d.status,
         category: e.classifyProxyLogCategory(a.requestTraits),
-        errorDetail: p,
+        errorDetail: e.appendLogDiagnosticDetail(e.extractProxyErrorDetail(d), e.buildRuntimeDiagnosticDetail(a)),
         detailJson: e.buildStructuredLogDetail(a, { statusCode: d.status }, {
           deliveryMode: "proxy",
           redirectMode: "playback_info_cache",
@@ -16526,8 +16530,7 @@ function th(o = {}, e = {}) {
           upstreamStatus: d.status
         }),
         outboundColo: ""
-      };
-      return m && e.recordAccessLog(a, h), new Response(a.requestMethod === "HEAD" ? null : u, {
+      }), new Response(a.requestMethod === "HEAD" ? null : u, {
         status: d.status,
         statusText: d.statusText,
         headers: f
@@ -16785,13 +16788,14 @@ function ah(o = {}, e = {}) {
       });
     },
     buildPlaybackProgressThrottleResponse(t) {
-      const r = e.buildEdgeResponseHeaders(t.finalOrigin), a = e.shouldRecordAccessLog(t, {
+      const r = e.buildEdgeResponseHeaders(t.finalOrigin);
+      return e.shouldRecordAccessLog(t, {
         statusCode: 204,
         category: e.classifyProxyLogCategory(t.requestTraits)
-      }), n = a ? e.buildProgressRelayDiagnosticDetail(t) : "", s = {
+      }) && e.recordAccessLog(t, {
         statusCode: 204,
         category: e.classifyProxyLogCategory(t.requestTraits),
-        errorDetail: n,
+        errorDetail: e.buildProgressRelayDiagnosticDetail(t),
         detailJson: e.buildStructuredLogDetail(t, { statusCode: 204 }, {
           deliveryMode: "proxy",
           redirectMode: "progress_relay",
@@ -16801,8 +16805,7 @@ function ah(o = {}, e = {}) {
           upstreamStatus: 204
         }),
         outboundColo: t.defaultOutboundColo || ""
-      };
-      return a && e.recordAccessLog(t, s), new Response(null, {
+      }), new Response(null, {
         status: 204,
         statusText: "No Content",
         headers: r
