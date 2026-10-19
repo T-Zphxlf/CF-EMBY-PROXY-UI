@@ -7,6 +7,7 @@ import {
   defineKvTidyMethods,
   defineSnapshotMethods,
   invalidateRuntimeConfigCache,
+  sanitizeRuntimeConfig,
 } from "../worker/runtime/application-facades.js";
 
 const hooks = createTestApplication();
@@ -77,6 +78,30 @@ test("persistRuntimeConfig rejects writes when KV is not configured", async () =
     kernel.persistRuntimeConfig({ rateLimitRpm: 20 }, { env: {} }),
     (error) => error?.code === "KV_NOT_CONFIGURED" && error?.status === 503,
   );
+});
+
+test("adminUiSkin persists in KV config and normalizes unknown skins", async () => {
+  assert.equal(sanitizeRuntimeConfig({ adminUiSkin: "claude" }).adminUiSkin, "claude");
+  assert.equal(sanitizeRuntimeConfig({ adminUiSkin: " CLAUDE " }).adminUiSkin, "claude");
+  assert.equal(sanitizeRuntimeConfig({ adminUiSkin: "neon" }).adminUiSkin, "classic");
+  assert.equal("adminUiSkin" in sanitizeRuntimeConfig({}), false);
+
+  const { kv } = createKv({});
+  const env = {
+    ENI_KV: kv,
+    __CONFIG_CACHE_NAMESPACE: "config-kv-safety-admin-ui-skin",
+  };
+  invalidateRuntimeConfigCache();
+  try {
+    await kernel.persistRuntimeConfig(
+      { adminUiSkin: "claude" },
+      { env, kv, ctx: null, forceKvCommit: true },
+    );
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.adminUiSkin, "claude");
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
 });
 
 test("applyKvMutationsWithRollback restores only mutations that completed", async () => {

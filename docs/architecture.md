@@ -148,7 +148,7 @@ D1 保存日志、统计聚合、DNS/IP 工作区数据、运行状态、缓存/
 
 | 设置分区 | 代表字段（`sys:theme` 键名） | 绑定 / 键 | 生效链路 |
 | --- | --- | --- | --- |
-| 系统 UI | `settingsExperienceMode`、`uiRadiusPx`、`multiLinkCopyPanelEnabled`、`dashboardShowD1WriteHotspot`、`dashboardShowKvD1Status` | KV `ENI_KV` → `sys:theme` | 管理端 HTML 渲染 |
+| 系统 UI | `settingsExperienceMode`、`adminUiSkin`、`uiRadiusPx`、`multiLinkCopyPanelEnabled`、`dashboardShowD1WriteHotspot`、`dashboardShowKvD1Status` | KV `ENI_KV` → `sys:theme` | 管理端 HTML 渲染 |
 | 代理与网络 | `protocolStrategy`、`enableHostPrefixProxy`、`enablePrewarm`、`prewarmDepth`、`routingDecisionMode`、`playbackInfoCache*`、`videoProgressForward*`、`directStaticAssets`、`directHlsDash`、`sourceDirectNodes`、`pingTimeout`、`hedge*`、`upstreamTimeoutMs`、`upstreamRetryAttempts`、`defaultPlaybackInfoMode`、`defaultRealClientIpMode`、`defaultMediaAuthMode` 等 | KV `ENI_KV` → `sys:theme`（节点级可被 `node:{name}` 覆盖） | 代理 workflow |
 | 静态资源策略 | `cacheTtlImages`、`corsOrigins` | KV `ENI_KV` → `sys:theme` | 缓存与响应头 |
 | 安全防护 | `geoAllowlist`、`geoBlocklist`、`ipBlacklist`、`rateLimitRpm` | KV `ENI_KV` → `sys:theme` | 代理访问策略 |

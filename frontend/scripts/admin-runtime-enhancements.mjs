@@ -721,6 +721,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
 (() => {
   if (window.__ADMIN_RUNTIME_ENHANCEMENTS_READY__) return;
   window.__ADMIN_RUNTIME_ENHANCEMENTS_READY__ = true;
+  installAdminBootstrapFetchDedupe();
 
   const enqueue = typeof window.requestAnimationFrame === 'function'
     ? window.requestAnimationFrame.bind(window)
@@ -756,6 +757,20 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     }
   }
 
+  function normalizeUiSkin(skin = '') {
+    return skin === UI_SKIN_CLAUDE ? UI_SKIN_CLAUDE : UI_SKIN_CLASSIC;
+  }
+
+  // 服务端把皮肤注入运行时 bootstrap，首帧就能按 KV 配置落主题，不用等 app 启动。
+  function readBootstrapUiSkin() {
+    try {
+      const skin = window.__ADMIN_BOOTSTRAP__?.adminUiSkin;
+      return skin === UI_SKIN_CLASSIC || skin === UI_SKIN_CLAUDE ? skin : '';
+    } catch {
+      return '';
+    }
+  }
+
   function ensureUiSkinFonts() {
     if (typeof document?.createElement !== 'function' || !document?.head) return;
     if (document.head.querySelector('link[data-admin-skin-font="1"]')) return;
@@ -770,7 +785,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   }
 
   function applyUiSkin(skin, options = {}) {
-    const next = skin === UI_SKIN_CLAUDE ? UI_SKIN_CLAUDE : UI_SKIN_CLASSIC;
+    const next = normalizeUiSkin(skin);
     if (next === UI_SKIN_CLAUDE) ensureUiSkinFonts();
     document?.documentElement?.setAttribute?.('data-theme', next);
     if (options.persist) {
@@ -782,10 +797,41 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   }
 
   function resolveCurrentUiSkin(app = window.App) {
+    const serverSkin = app?.runtimeConfig?.adminUiSkin;
+    if (serverSkin === UI_SKIN_CLASSIC || serverSkin === UI_SKIN_CLAUDE) return serverSkin;
     if (app?.uiSkin === UI_SKIN_CLAUDE) return UI_SKIN_CLAUDE;
     if (document?.documentElement?.getAttribute?.('data-theme') === UI_SKIN_CLAUDE)
       return UI_SKIN_CLAUDE;
     return readStoredUiSkin();
+  }
+
+  // 皮肤存 KV；app 拿到 bootstrap 配置后，本机缓存与服务器不一致时以服务器为准。
+  function syncServerUiSkin(app = window.App) {
+    const serverSkin = app?.runtimeConfig?.adminUiSkin;
+    if (serverSkin !== UI_SKIN_CLASSIC && serverSkin !== UI_SKIN_CLAUDE) return;
+    if (app?.uiSkin === serverSkin) return;
+    if (typeof app?.setUiSkin === 'function') app.setUiSkin(serverSkin);
+    else applyUiSkin(serverSkin, { persist: true });
+  }
+
+  async function persistUiSkinPreference(app, skin) {
+    if (typeof app?.apiCall !== 'function') return;
+    const next = normalizeUiSkin(skin);
+    try {
+      const result = await app.apiCall('saveConfig', {
+        config: { ...(app.runtimeConfig || {}), adminUiSkin: next },
+        expectedConfigRevision: String(app.adminRevisions?.configRevision || ''),
+        meta: { section: 'ui', source: 'skin' }
+      });
+      if (result?.revisions && typeof app.applyAdminRevisions === 'function')
+        app.applyAdminRevisions(result.revisions);
+      if (app.runtimeConfig && typeof app.runtimeConfig === 'object')
+        app.runtimeConfig.adminUiSkin = normalizeUiSkin(result?.config?.adminUiSkin || next);
+    } catch (error) {
+      console.error('ui skin save failed', error);
+      if (typeof app?.showMessage === 'function')
+        app.showMessage('界面主题已在本机生效，但保存到 Worker 配置失败：' + (error?.message || '未知错误'), { tone: 'warning', modal: true });
+    }
   }
 
   function syncThemeSkinPanel(app = window.App) {
@@ -794,19 +840,22 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (!root.dataset.adminThemeSkinReady) {
       root.dataset.adminThemeSkinReady = '1';
       root.innerHTML =
-        '<div class="ui-block-head"><div><div class="ui-section-kicker">Theme</div><div class="ui-section-title">\u754c\u9762\u4e3b\u9898</div></div><span class="ui-chip-muted">\u4ec5\u672c\u673a</span></div>' +
-        '<p class="text-xs text-slate-500 mb-3 ml-6">\u5207\u6362\u7ba1\u7406\u754c\u9762\u7684\u89c6\u89c9\u4e3b\u9898\uff0c\u4ec5\u5f71\u54cd\u5f53\u524d\u6d4f\u89c8\u5668\uff0c\u4e0d\u4fee\u6539 Worker \u914d\u7f6e\u3002</p>' +
+        '<div class="ui-block-head"><div><div class="ui-section-kicker">Theme</div><div class="ui-section-title">界面主题</div></div><span class="ui-chip-muted">全局</span></div>' +
+        '<p class="text-xs text-slate-500 mb-3 ml-6">切换管理界面的视觉主题，保存到 Worker 配置后对所有管理端生效，当前浏览器立即应用。</p>' +
         '<div class="ml-6 flex flex-wrap gap-2" role="group" aria-label="\u754c\u9762\u4e3b\u9898">' +
         '<button type="button" data-admin-skin-option="classic">\u7ecf\u5178\u84dd</button>' +
         '<button type="button" data-admin-skin-option="claude">\u6696\u7eb8</button>' +
         '</div>';
       root.querySelectorAll('[data-admin-skin-option]').forEach((button) => {
         button.addEventListener('click', () => {
-          const next = button.getAttribute('data-admin-skin-option');
+          const next = normalizeUiSkin(button.getAttribute('data-admin-skin-option'));
           applyUiSkin(next);
           if (typeof app?.setUiSkin === 'function') app.setUiSkin(next);
           else applyUiSkin(next, { persist: true });
+          // 先乐观更新运行时配置，避免下一帧的 syncServerUiSkin 把选择回滚成旧值。
+          if (app?.runtimeConfig && typeof app.runtimeConfig === 'object') app.runtimeConfig.adminUiSkin = next;
           syncThemeSkinPanel(app);
+          persistUiSkinPreference(app, next);
         });
       });
     }
@@ -819,7 +868,9 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
   }
 
   try {
-    applyUiSkin(readStoredUiSkin());
+    const bootstrapSkin = readBootstrapUiSkin();
+    if (bootstrapSkin) applyUiSkin(bootstrapSkin, { persist: true });
+    else applyUiSkin(readStoredUiSkin());
   } catch (error) {
     console.error('ui skin init failed', error);
   }
@@ -840,11 +891,18 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     pending: false
   };
   const DASHBOARD_MONTHLY_TRAFFIC_CLIENT_TTL_MS = 30 * 60 * 1000;
+  // 四层仪表盘请求合并成一次快照读取；60 秒内重复进出直接复用上次结果。
+  const DASHBOARD_LAYER_CACHE_TTL_MS = 60 * 1000;
+  // 保存后服务端已把完整 config 回传，设置页短时间内不必再拉 bootstrap。
+  const SETTINGS_BOOTSTRAP_CACHE_TTL_MS = 10 * 1000;
+  // 日志第一页的重复进入不发请求；超过 30 秒或筛选变化才重新拉取。
+  const LOG_PAGE_ONE_CACHE_TTL_MS = 30 * 1000;
+  const logPageOneCacheState = { signature: '', at: 0 };
   const dashboardLayerState = {
     loadSeq: 0,
-    statsLoaded: false,
-    runtimeLoaded: false,
-    hotspotLoaded: false,
+    statsLoadedAt: 0,
+    runtimeLoadedAt: 0,
+    hotspotLoadedAt: 0,
     statsLoading: false,
     runtimeLoading: false,
     hotspotLoading: false
@@ -977,6 +1035,7 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (shellFrameId) return;
     shellFrameId = enqueue(() => {
       shellFrameId = 0;
+      syncServerUiSkin(window.App);
       applyBrandEnhancements();
       applyToolbarEnhancements();
       applyLayoutEnhancements();
@@ -1943,6 +2002,123 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     return Promise.race([task, timeout]).finally(() => window.clearTimeout(timer));
   }
 
+  let settingsBootstrapSyncedAt = 0;
+
+  // 启动时 onMounted 与路由加载会各请求一次设置 bootstrap；这里合并成一次网络请求。
+  const SETTINGS_BOOTSTRAP_FETCH_TTL_MS = 5 * 1000;
+  function installAdminBootstrapFetchDedupe() {
+    if (typeof window === 'undefined' || typeof window.fetch !== 'function' || window.fetch.__adminBootstrapDedupe) return;
+    const originalFetch = window.fetch.bind(window);
+    const inFlight = new Map();
+    const recent = new Map();
+    const dedupeFetch = function adminBootstrapFetchDedupe(input, init) {
+      const method = String(init?.method || 'GET').toUpperCase();
+      const body = typeof init?.body === 'string' ? init.body : '';
+      if (method !== 'POST' || !body.includes('"action":"getSettingsBootstrap"')) {
+        // 任何其它管理请求都可能改变配置，顺手让短缓存失效。
+        recent.clear();
+        return originalFetch(input, init);
+      }
+      const key = String(input?.url || input || '') + '|' + body;
+      const hit = recent.get(key);
+      if (hit && Date.now() - hit.at < SETTINGS_BOOTSTRAP_FETCH_TTL_MS) return Promise.resolve(hit.response.clone());
+      let pending = inFlight.get(key);
+      if (!pending) {
+        pending = originalFetch(input, init).then((response) => {
+          if (response?.ok) recent.set(key, { at: Date.now(), response: response.clone() });
+          return response;
+        }).finally(() => inFlight.delete(key));
+        inFlight.set(key, pending);
+      }
+      return pending.then((response) => response.clone());
+    };
+    dedupeFetch.__adminBootstrapDedupe = true;
+    window.fetch = dedupeFetch;
+  }
+
+  function readFreshSettingsBootstrap(app) {
+    if (settingsBootstrapSyncedAt <= 0 || Date.now() - settingsBootstrapSyncedAt > SETTINGS_BOOTSTRAP_CACHE_TTL_MS) return null;
+    const data = app?.adminBootstrapCache?.data;
+    if (!data || typeof data !== 'object') return null;
+    return {
+      config: data.config && typeof data.config === 'object' ? { ...data.config } : {},
+      hostDomain: String(data.hostDomain || ''),
+      nodes: Array.isArray(data.nodes) ? data.nodes.slice() : [],
+      runtimeStatus: data.runtimeStatus && typeof data.runtimeStatus === 'object' ? { ...data.runtimeStatus } : {},
+      revisions: data.revisions && typeof data.revisions === "object" ? { ...data.revisions } : {},
+      generatedAt: String(data.generatedAt || "")
+    };
+  }
+
+  // saveConfig 已返回完整 config，回填缓存后设置页刷新不必再拉 bootstrap。
+  function updateAdminBootstrapCache(app, config, revisions) {
+    const cache = app?.adminBootstrapCache;
+    if (!cache || typeof cache !== 'object' || !cache.data || typeof cache.data !== 'object') return;
+    app.adminBootstrapCache = {
+      cachedAt: Date.now(),
+      data: {
+        ...cache.data,
+        config: { ...config },
+        revisions: { ...(revisions && typeof revisions === 'object' ? revisions : app.adminRevisions) }
+      }
+    };
+    settingsBootstrapSyncedAt = Date.now();
+  }
+
+  function buildCurrentLogPageSignature(app) {
+    if (typeof app?.buildLogPaginationSignature !== 'function') return '';
+    let range = { startDate: app.logStartDate, endDate: app.logEndDate };
+    if (typeof app.ensureLogDateRange === 'function') {
+      try {
+        range = app.ensureLogDateRange() || range;
+      } catch {
+        range = { startDate: app.logStartDate, endDate: app.logEndDate };
+      }
+    }
+    return app.buildLogPaginationSignature({
+      keyword: app.logSearchKeyword || '',
+      searchMode: typeof app.getRuntimeLogSearchMode === 'function' ? app.getRuntimeLogSearchMode() : 'fts',
+      requestGroup: app.logsRequestGroupFilter || '',
+      statusGroup: app.logsStatusGroupFilter || '',
+      startDate: range?.startDate || '',
+      endDate: range?.endDate || ''
+    });
+  }
+
+  // 日志第一页：同筛选条件 30 秒内复用，避免每次进入都清缓存再重拉。
+  function patchLogPageCache(app) {
+    if (!app || app.__adminLogPageCachePatched || typeof app.loadLogs !== 'function') return;
+    app.__adminLogPageCachePatched = true;
+    const originalLoadLogs = app.loadLogs.bind(app);
+    app.loadLogs = function loadLogsWithFirstPageCache(page = this.logPage, routeToken = null, force = false) {
+      const targetPage = Math.max(1, parseInt(page, 10) || 1);
+      if (force || targetPage !== 1) return originalLoadLogs(page, routeToken, force);
+      // 关闭日志功能时由原逻辑清空列表，不能拿旧缓存顶替。
+      if (typeof this.isLogFeatureEnabled === 'function' && !this.isLogFeatureEnabled()) return originalLoadLogs(page, routeToken, force);
+      const signature = buildCurrentLogPageSignature(this);
+      const cached = signature
+        && signature === logPageOneCacheState.signature
+        && Date.now() - logPageOneCacheState.at < LOG_PAGE_ONE_CACHE_TTL_MS
+        && typeof this.getCachedLogPage === 'function'
+        ? this.getCachedLogPage(1, signature)
+        : null;
+      if (cached && typeof this.applyCachedLogPage === 'function') {
+        if (typeof this.isRouteLoadCurrent === 'function' && !this.isRouteLoadCurrent(routeToken)) return Promise.resolve(null);
+        this.logsLoadSeq = (Number(this.logsLoadSeq) || 0) + 1;
+        this.logsPageLoading = false;
+        this.applyCachedLogPage(cached, signature);
+        return Promise.resolve(cached);
+      }
+      const result = originalLoadLogs(page, routeToken, force);
+      // 先记录签名：跨 realm 的 promise 回调会晚于 await 恢复，不能等到这里再写状态。
+      if (signature) {
+        logPageOneCacheState.signature = signature;
+        logPageOneCacheState.at = Date.now();
+      }
+      return result;
+    };
+  }
+
   function patchSafetyContractMethods(app) {
     if (!app || patchedSafetyContractApp === app) return;
     patchedSafetyContractApp = app;
@@ -1950,24 +2126,38 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
     if (typeof app.apiCall === 'function') {
       const originalApiCall = app.apiCall.bind(app);
       app.apiCall = async function apiCallWithNodeResourceWarnings(action, payload = {}) {
-		const normalizedAction = String(action || '');
-		let requestPayload = payload && typeof payload === 'object' ? payload : {};
-		if (normalizedAction === 'saveConfig') {
-			requestPayload = {
-				...requestPayload,
-				mutationId: String(requestPayload.mutationId || ('cfg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)))
-			};
-		}
-		let result;
-		try {
-			result = await withUiRequestTimeout(app, normalizedAction, originalApiCall(action, requestPayload));
-		} catch (error) {
-			if (normalizedAction === 'saveConfig' && String(error?.code || '').toUpperCase() === 'CONFIG_REVISION_CONFLICT') {
-				error.message = '配置版本已变化，请刷新设置确认差异后重新提交；当前编辑内容已保留。';
-			}
-			throw error;
-		}
-        if (String(action || '') === 'getNode' && Array.isArray(result?.warnings) && result.warnings.length > 0) {
+        const normalizedAction = String(action || '');
+        let requestPayload = payload && typeof payload === 'object' ? payload : {};
+        if (normalizedAction === 'getSettingsBootstrap') {
+          const cachedBootstrap = readFreshSettingsBootstrap(app);
+          if (cachedBootstrap) return cachedBootstrap;
+        }
+        if (normalizedAction === 'saveConfig') {
+          requestPayload = {
+            ...requestPayload,
+            mutationId: String(requestPayload.mutationId || ('cfg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10)))
+          };
+        }
+        let result;
+        try {
+          result = await withUiRequestTimeout(app, normalizedAction, originalApiCall(action, requestPayload));
+        } catch (error) {
+          if (normalizedAction === 'saveConfig' && String(error?.code || '').toUpperCase() === 'CONFIG_REVISION_CONFLICT') {
+            error.message = '配置版本已变化，请刷新设置确认差异后重新提交；当前编辑内容已保留。';
+          }
+          throw error;
+        }
+        if (normalizedAction === 'getSettingsBootstrap' || normalizedAction === 'getAdminBootstrap') {
+          settingsBootstrapSyncedAt = Date.now();
+        }
+        if (normalizedAction === 'saveConfig' && result?.config && typeof result.config === 'object') {
+          updateAdminBootstrapCache(app, result.config, result.revisions);
+          // 配置变了，仪表盘数字可能同时变化，下一次进入重新取。
+          dashboardLayerState.statsLoadedAt = 0;
+          dashboardLayerState.runtimeLoadedAt = 0;
+          dashboardLayerState.hotspotLoadedAt = 0;
+        }
+        if (normalizedAction === 'getNode' && Array.isArray(result?.warnings) && result.warnings.length > 0) {
           const warning = result.warnings.find((item) => item?.code === 'NODE_RESOURCE_LIMIT_EXCEEDED') || result.warnings[0];
           const field = String(warning?.field || 'record');
           const actual = warning?.actual == null ? '?' : String(warning.actual);
@@ -1977,6 +2167,8 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
         return result;
       };
     }
+
+    patchLogPageCache(app);
 
     app.runD1SchemaRepairFlow = async function runTwoPhaseD1SchemaRepairFlow(options = {}) {
       const readSnapshot = async () => {
@@ -2418,67 +2610,20 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
         const loadSeq = ++dashboardLayerState.loadSeq;
         const routeIsCurrent = () => loadSeq === dashboardLayerState.loadSeq && this.isRouteLoadCurrent(routeToken);
         const previousHotspot = this.dashboardD1WriteHotspot;
-        const previousStatsAvailable = dashboardLayerState.statsLoaded || String(this.dashboardView?.nodes?.meta || '').includes('统计时间');
+        const previousStatsAvailable = dashboardLayerState.statsLoadedAt > 0 || String(this.dashboardView?.nodes?.meta || '').includes('统计时间');
         const previousRuntimeText = String(this.dashboardRuntimeView?.updatedText || '').trim();
-        const previousRuntimeAvailable = dashboardLayerState.runtimeLoaded || (!!previousRuntimeText && !previousRuntimeText.includes('未加载'));
-        let liveStatsApplied = false;
-        let liveRuntimeApplied = false;
-        if (forceRefresh) this.dashboardRefreshPending = true;
-        dashboardLayerState.statsLoading = true;
-        dashboardLayerState.runtimeLoading = true;
-
-        if (!forceRefresh) {
-          void this.apiCall('getDashboardCachedSnapshot').then((payload) => {
-            if (!routeIsCurrent()) return;
-            const snapshot = payload?.snapshot && typeof payload.snapshot === 'object' ? payload.snapshot : null;
-            if (!snapshot) return;
-            const cacheMeta = snapshot.cacheMeta && typeof snapshot.cacheMeta === 'object' ? snapshot.cacheMeta : {};
-            if (!liveStatsApplied && snapshot.stats && typeof snapshot.stats === 'object') {
-              this.applyDashboardStatsState({ ...snapshot.stats, cacheStatus: cacheMeta.cacheStatus || 'cache' });
-              dashboardLayerState.statsLoaded = true;
-            }
-            if (!liveRuntimeApplied && snapshot.runtimeStatus && typeof snapshot.runtimeStatus === 'object') {
-              this.applyRuntimeStatusState(snapshot.runtimeStatus);
-              dashboardLayerState.runtimeLoaded = true;
-            }
-            this.dashboardCacheMeta = cacheMeta;
-          }).catch((error) => {
-            console.warn('dashboard cached snapshot unavailable', error);
-          });
-        }
-
-        const statsTask = this.apiCall('getDashboardCoreStats', { forceRefresh }).then((stats) => {
-          if (!routeIsCurrent()) return stats;
-          liveStatsApplied = true;
-          this.applyDashboardStatsState(stats && typeof stats === 'object' ? stats : {});
-          dashboardLayerState.statsLoaded = true;
-          return stats;
-        }).catch((error) => {
-          if (routeIsCurrent() && !previousStatsAvailable) this.applyDashboardErrorState(error?.message || '仪表盘统计加载失败');
-          throw error;
-        }).finally(() => {
-          if (loadSeq === dashboardLayerState.loadSeq) dashboardLayerState.statsLoading = false;
-        });
-
-        const runtimeTask = this.apiCall('getRuntimeStatus', { forceRefresh }).then((payload) => {
-          if (!routeIsCurrent()) return payload;
-          liveRuntimeApplied = true;
-          const runtimeStatus = payload?.status && typeof payload.status === 'object' ? payload.status : {};
-          this.applyRuntimeStatusState(runtimeStatus);
-          this.patchAdminBootstrapCache({ runtimeStatus: this.runtimeStatus });
-          dashboardLayerState.runtimeLoaded = true;
-          return payload;
-        }).catch((error) => {
-          if (routeIsCurrent() && !previousRuntimeAvailable) this.applyRuntimeStatusErrorState(error?.message || '运行状态加载失败');
-          throw error;
-        }).finally(() => {
-          if (loadSeq === dashboardLayerState.loadSeq) dashboardLayerState.runtimeLoading = false;
-        });
-
+        const previousRuntimeAvailable = dashboardLayerState.runtimeLoadedAt > 0 || (!!previousRuntimeText && !previousRuntimeText.includes('未加载'));
         const showHotspot = this.runtimeConfig?.dashboardShowD1WriteHotspot === true;
-        if (showHotspot) {
+        const now = Date.now();
+        const layerIsFresh = (loadedAt) => loadedAt > 0 && now - loadedAt < DASHBOARD_LAYER_CACHE_TTL_MS;
+        const statsFresh = layerIsFresh(dashboardLayerState.statsLoadedAt);
+        const runtimeFresh = layerIsFresh(dashboardLayerState.runtimeLoadedAt);
+        const hotspotFresh = layerIsFresh(dashboardLayerState.hotspotLoadedAt);
+        if (forceRefresh) this.dashboardRefreshPending = true;
+
+        const refreshHotspot = async () => {
           dashboardLayerState.hotspotLoading = true;
-          if (!dashboardLayerState.hotspotLoaded) {
+          if (!dashboardLayerState.hotspotLoadedAt) {
             this.dashboardD1WriteHotspot = {
               ...(previousHotspot && typeof previousHotspot === 'object' ? previousHotspot : {}),
               status: 'loading',
@@ -2487,12 +2632,13 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
               available: false
             };
           }
-          void this.apiCall('getDashboardD1WriteHotspot', { forceRefresh }).then((hotspot) => {
+          try {
+            const hotspot = await this.apiCall('getDashboardD1WriteHotspot', { forceRefresh });
             if (!routeIsCurrent()) return;
             this.dashboardD1WriteHotspot = hotspot && typeof hotspot === 'object' ? hotspot : {};
-            dashboardLayerState.hotspotLoaded = true;
-          }).catch((error) => {
-            if (!routeIsCurrent() || dashboardLayerState.hotspotLoaded) return;
+            dashboardLayerState.hotspotLoadedAt = Date.now();
+          } catch (error) {
+            if (!routeIsCurrent() || dashboardLayerState.hotspotLoadedAt > 0) return;
             this.dashboardD1WriteHotspot = {
               ...(this.dashboardD1WriteHotspot || {}),
               status: 'failed',
@@ -2500,14 +2646,88 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
               detail: error?.message || '未知错误',
               available: false
             };
-          }).finally(() => {
+          } finally {
             if (loadSeq === dashboardLayerState.loadSeq) dashboardLayerState.hotspotLoading = false;
-          });
+          }
+        };
+
+        // 60 秒内重复进入：复用上次结果，0 个请求（热点过期时最多 1 个）。
+        if (!forceRefresh && statsFresh && runtimeFresh) {
+          if (showHotspot && !hotspotFresh) void refreshHotspot();
+          return null;
         }
+
+        dashboardLayerState.statsLoading = true;
+        dashboardLayerState.runtimeLoading = true;
+        let snapshotFresh = false;
+
+        if (!forceRefresh) {
+          try {
+            const payload = await this.apiCall('getDashboardCachedSnapshot');
+            if (!routeIsCurrent()) return null;
+            const snapshot = payload?.snapshot && typeof payload.snapshot === 'object' ? payload.snapshot : null;
+            if (snapshot) {
+              const cacheMeta = snapshot.cacheMeta && typeof snapshot.cacheMeta === 'object' ? snapshot.cacheMeta : {};
+              snapshotFresh = String(cacheMeta.cacheStatus || '').trim().toLowerCase() === 'cache';
+              if (snapshot.stats && typeof snapshot.stats === 'object') {
+                this.applyDashboardStatsState({ ...snapshot.stats, cacheStatus: cacheMeta.cacheStatus || 'cache' });
+                dashboardLayerState.statsLoadedAt = Date.now();
+              }
+              if (snapshot.runtimeStatus && typeof snapshot.runtimeStatus === 'object') {
+                this.applyRuntimeStatusState(snapshot.runtimeStatus);
+                dashboardLayerState.runtimeLoadedAt = Date.now();
+              }
+              this.dashboardCacheMeta = cacheMeta;
+            }
+          } catch (error) {
+            console.warn('dashboard cached snapshot unavailable', error);
+          }
+          if (!routeIsCurrent()) return null;
+          // D1 快照仍在 1 小时有效期内：它就是原生路径会返回的内容，不再重复拉活数据。
+          if (snapshotFresh) {
+            dashboardLayerState.statsLoading = false;
+            dashboardLayerState.runtimeLoading = false;
+            if (showHotspot && !hotspotFresh) void refreshHotspot();
+            return null;
+          }
+        }
+
+        const needStats = forceRefresh || !statsFresh;
+        const needRuntime = forceRefresh || !runtimeFresh;
+        if (!needStats) dashboardLayerState.statsLoading = false;
+        if (!needRuntime) dashboardLayerState.runtimeLoading = false;
+
+        const statsTask = needStats ? this.apiCall('getDashboardCoreStats', { forceRefresh }).then((stats) => {
+          if (!routeIsCurrent()) return stats;
+          this.applyDashboardStatsState(stats && typeof stats === 'object' ? stats : {});
+          dashboardLayerState.statsLoadedAt = Date.now();
+          return stats;
+        }).catch((error) => {
+          if (routeIsCurrent() && !previousStatsAvailable) this.applyDashboardErrorState(error?.message || '仪表盘统计加载失败');
+          throw error;
+        }).finally(() => {
+          if (loadSeq === dashboardLayerState.loadSeq) dashboardLayerState.statsLoading = false;
+        }) : Promise.resolve(null);
+
+        const runtimeTask = needRuntime ? this.apiCall('getRuntimeStatus', { forceRefresh }).then((payload) => {
+          if (!routeIsCurrent()) return payload;
+          const runtimeStatus = payload?.status && typeof payload.status === 'object' ? payload.status : {};
+          this.applyRuntimeStatusState(runtimeStatus);
+          this.patchAdminBootstrapCache({ runtimeStatus: this.runtimeStatus });
+          dashboardLayerState.runtimeLoadedAt = Date.now();
+          return payload;
+        }).catch((error) => {
+          if (routeIsCurrent() && !previousRuntimeAvailable) this.applyRuntimeStatusErrorState(error?.message || '运行状态加载失败');
+          throw error;
+        }).finally(() => {
+          if (loadSeq === dashboardLayerState.loadSeq) dashboardLayerState.runtimeLoading = false;
+        }) : Promise.resolve(null);
+
+        if (showHotspot && (forceRefresh || !hotspotFresh)) void refreshHotspot();
 
         const results = await Promise.allSettled([statsTask, runtimeTask]);
         if (forceRefresh && routeIsCurrent()) {
-          const failures = results.filter((item) => item.status === 'rejected');
+          const failures = results.filter((item) => item.status === 'rejected' && item.reason);
           if (failures.length) {
             this.showMessage('仪表盘部分刷新失败，已保留其余可用状态。', { tone: 'warning', modal: true });
           }

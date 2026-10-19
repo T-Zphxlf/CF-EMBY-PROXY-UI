@@ -450,6 +450,7 @@ var UI_DEFAULTS = Object.freeze({
   DashboardShowD1WriteHotspot: false,
   DashboardShowKvD1Status: false,
   UiRadiusPx: 10,
+  AdminUiSkin: "classic",
   NodePanelPingAutoSort: false,
 });
 var LOG_DEFAULTS = Object.freeze({
@@ -2812,6 +2813,7 @@ function defineAdminShellTemplate(dependencies = {}, shell = {}) {
       adminPath: getAdminPath(env),
       loginPath: getAdminLoginPath(env),
       initHealth,
+      adminUiSkin: normalizeAdminUiSkin(config?.adminUiSkin),
       hostDomain: resolveConfiguredHost(env),
       contract: buildAdminUiContract(),
       shell: buildAdminShellState(env, initHealth, config),
@@ -6915,6 +6917,7 @@ var CONFIG_LEGACY_MIGRATION_SOURCE_FIELDS = [
 var CONFIG_SANITIZE_RULES = {
   allowedFields: [
     "uiRadiusPx",
+    "adminUiSkin",
     "settingsExperienceMode",
     "indexUrl",
     "cfQuotaPlanOverride",
@@ -7408,6 +7411,13 @@ function migrateRuntimeConfigLegacyAliases(input = {}) {
     ),
   };
 }
+function normalizeAdminUiSkin(value = "") {
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "claude"
+    ? "claude"
+    : Config.Defaults.AdminUiSkin;
+}
 function sanitizeRuntimeConfig(input = {}) {
   const { config: migratedRawConfig } = migrateRuntimeConfigLegacyAliases(
     input && typeof input === "object" && !Array.isArray(input) ? input : {},
@@ -7445,6 +7455,8 @@ function sanitizeMigratedRuntimeConfig(migratedRawConfig = {}) {
       .toLowerCase() === "expert"
       ? "expert"
       : "novice";
+  if (Object.prototype.hasOwnProperty.call(sanitized, "adminUiSkin"))
+    sanitized.adminUiSkin = normalizeAdminUiSkin(sanitized.adminUiSkin);
   sanitized.cfQuotaPlanOverride = normalizeCloudflareQuotaPlanOverride(
     sanitized.cfQuotaPlanOverride,
   );
@@ -26112,7 +26124,6 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
             directHlsDash: false,
             legacyEntryOffloadEnabled: false,
             legacyEntryOffloadReason: "",
-            direct307Mode: false,
             enablePrewarm: currentConfig.enablePrewarm !== false,
             isMetadataCacheable:
               requestMethod === "GET" &&
@@ -27126,7 +27137,6 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
             ? "entry_direct_hls_dash"
             : "";
       const legacyEntryOffloadEnabled = !!legacyEntryOffloadReason;
-      const direct307Mode = legacyEntryOffloadEnabled;
       return {
         rangeHeader,
         ifRangeHeader,
@@ -27154,7 +27164,6 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
         isSegment,
         isSmartStrmMedia,
         isWsUpgrade,
-        looksLikeVideoRoute,
         isBigStream,
         isPlaybackCriticalRequest,
         isApiRequest,
@@ -27168,10 +27177,6 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
           !isWsUpgrade &&
           !legacyEntryOffloadEnabled &&
           (isImage || isSubtitle || isManifest),
-        isCacheableAsset:
-          requestMethod === "GET" &&
-          !isWsUpgrade &&
-          (isImage || isStaticFile || isSubtitle || isSegment || isManifest),
         nodeDirectMedia,
         directStaticAssets,
         directHlsDash,
@@ -27181,7 +27186,6 @@ function defineProxyRoutingDecisionMethods(dependencies = {}, kernel = {}) {
           isSafeMethod &&
           !isApiRequest &&
           (isSmartStrmMedia || isBigStream || isManifest || isSegment),
-        direct307Mode,
       };
     },
     isEntryDirectDataPlaneMode(dataPlaneMode) {

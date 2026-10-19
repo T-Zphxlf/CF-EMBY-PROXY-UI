@@ -29,7 +29,7 @@ function loadEnhancementTestHooks(documentOverrides = {}, windowOverrides = {}) 
   assert.notEqual(closureEnd, -1, "enhancement script must use the expected closure");
   const instrumentedScript =
     inlineScript.slice(0, closureEnd) +
-    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, applyUiSkin, resolveCurrentUiSkin, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout };\n" +
+    "window.__enhancementTestHooks = { formatD1SchemaStatus, formatD1InitializationResult, formatD1RepairPlan, formatD1RepairError, patchSafetyContractMethods, patchTmdbNodeMethods, getDashboardMonthPeriodKey, isDashboardMonthlyTrafficCacheFresh, toggleDashboardTrafficPeriod, dashboardTrafficState, normalizeHeadProbeResult, formatHeadProbeResult, formatHeadProbeTitle, normalizeHeadProbePath, normalizeHostPrefixDnsHostname, isHostPrefixNodeLinkActive, runWithConcurrency, NODE_GET_PROBE_CONCURRENCY, readStoredUiSkin, readBootstrapUiSkin, normalizeUiSkin, applyUiSkin, resolveCurrentUiSkin, syncServerUiSkin, persistUiSkinPreference, syncDialogAccessibility, handleDialogEscapeKey, withUiRequestTimeout, installAdminBootstrapFetchDedupe, patchLogPageCache, dashboardLayerState, readFreshSettingsBootstrap, updateAdminBootstrapCache, buildCurrentLogPageSignature, fetch: window.fetch };\n" +
     inlineScript.slice(closureEnd);
   const window = {
     addEventListener() {},
@@ -319,6 +319,77 @@ test("ui skin runtime reads storage, persists the choice and marks the document"
   assert.equal(applyUiSkin("unknown"), "classic");
 });
 
+test("ui skin honors the server bootstrap value and saves the choice back to config", async () => {
+  const attributes = {};
+  const document = {
+    readyState: "loading",
+    addEventListener() {},
+    getElementById() {
+      return null;
+    },
+    querySelector() {
+      return null;
+    },
+    documentElement: {
+      setAttribute(name, value) {
+        attributes[name] = value;
+      },
+      getAttribute(name) {
+        return attributes[name] ?? null;
+      },
+    },
+  };
+  const store = new Map();
+  const hooks = loadEnhancementTestHooks(document, {
+    __ADMIN_BOOTSTRAP__: { adminUiSkin: "claude" },
+    localStorage: {
+      getItem: (key) => (store.has(key) ? store.get(key) : null),
+      setItem: (key, value) => store.set(key, String(value)),
+    },
+  });
+  // 首帧按 bootstrap 落主题，并写回本地缓存，避免 app 启动时用旧 local 值覆盖。
+  assert.equal(store.get("adminUiSkin"), "claude");
+  assert.equal(hooks.readBootstrapUiSkin(), "claude");
+  assert.equal(
+    hooks.resolveCurrentUiSkin({ runtimeConfig: { adminUiSkin: "classic" } }),
+    "classic",
+  );
+  assert.equal(attributes["data-theme"], "claude");
+
+  const applied = [];
+  hooks.syncServerUiSkin({
+    runtimeConfig: { adminUiSkin: "classic" },
+    uiSkin: "claude",
+    setUiSkin(next) {
+      applied.push(next);
+    },
+  });
+  assert.deepEqual(applied, ["classic"]);
+
+  const requests = [];
+  const app = {
+    runtimeConfig: { rateLimitRpm: 20, adminUiSkin: "classic" },
+    adminRevisions: { configRevision: "2026-01-01T00:00:00.000Z.abc123" },
+    async apiCall(action, payload) {
+      requests.push({ action, payload });
+      return { config: { adminUiSkin: "claude" }, revisions: { configRevision: "next" } };
+    },
+    applyAdminRevisions(revisions) {
+      app.adminRevisions = revisions;
+    },
+    showMessage() {},
+  };
+  await hooks.persistUiSkinPreference(app, "claude");
+
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].action, "saveConfig");
+  assert.equal(requests[0].payload.config.adminUiSkin, "claude");
+  assert.equal(requests[0].payload.config.rateLimitRpm, 20);
+  assert.equal(requests[0].payload.expectedConfigRevision, "2026-01-01T00:00:00.000Z.abc123");
+  assert.equal(app.adminRevisions.configRevision, "next");
+  assert.equal(app.runtimeConfig.adminUiSkin, "claude");
+});
+
 test("node health probes carry the line port into the ping target", async () => {
   const { patchSafetyContractMethods } = loadEnhancementTestHooks();
   const requests = [];
@@ -605,10 +676,7 @@ test("dashboard refresh separates stats, runtime status, and D1 hotspot failures
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /apiCall\(["']getDashboardD1WriteHotspot["']/);
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /function retainDashboardD1WriteHotspotInStats/);
   assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /d1WriteHotspot: hotspot/);
-  assert.match(
-    ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
-    /void this\.apiCall\(["']getDashboardD1WriteHotspot["']/,
-  );
+  assert.match(ADMIN_RUNTIME_ENHANCEMENT_SCRIPT, /void refreshHotspot\(\)/);
   assert.match(
     ADMIN_RUNTIME_ENHANCEMENT_SCRIPT,
     /Promise\.allSettled\(\[statsTask, runtimeTask\]\)/,
@@ -1789,4 +1857,201 @@ test("admin runtime composition refuses a half-connected module script entry", a
   );
   assert.match(source, /assertNoModuleScriptEntry\(source, "admin runtime template"\)/);
   assert.match(source, /assertNoModuleScriptEntry\(composed, "frontend\/index\.html"\)/);
+});
+
+test("in-flight settings bootstrap requests share one network round trip", async () => {
+  let calls = 0;
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const hooks = loadEnhancementTestHooks(
+    {},
+    {
+      fetch: async (input, init) => {
+        const body = String(init?.body || "");
+        if (!body.includes("getSettingsBootstrap")) return new Response("{}", { status: 200 });
+        calls += 1;
+        await gate;
+        return new Response(JSON.stringify({ config: { revision: calls } }), { status: 200 });
+      },
+    },
+  );
+  const init = { method: "POST", body: JSON.stringify({ action: "getSettingsBootstrap" }) };
+  const first = hooks.fetch("/admin", init);
+  const second = hooks.fetch("/admin", init);
+  release();
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(calls, 1);
+  assert.deepEqual(await a.json(), await b.json());
+  const third = await hooks.fetch("/admin", init);
+  assert.equal(calls, 1);
+  assert.deepEqual(await third.json(), { config: { revision: 1 } });
+  await hooks.fetch("/admin", { method: "POST", body: JSON.stringify({ action: "getLogs" }) });
+  await hooks.fetch("/admin", init);
+  assert.equal(calls, 2);
+});
+
+test("settings save reuses the returned config instead of refetching bootstrap", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const app = {
+    adminBootstrapCache: {
+      cachedAt: 1,
+      data: {
+        config: { revision: 1 },
+        nodes: [],
+        runtimeStatus: {},
+        hostDomain: "example.test",
+        revisions: { configRevision: 1 },
+      },
+    },
+    adminRevisions: { configRevision: 1 },
+    showMessage() {},
+    async apiCallImpl(action) {
+      calls.push(action);
+      if (action === "saveConfig")
+        return { config: { revision: 2 }, revisions: { configRevision: 2 } };
+      if (action === "getSettingsBootstrap") {
+        return { config: { revision: 3 }, revisions: { configRevision: 3 } };
+      }
+      return {};
+    },
+  };
+  app.apiCall = function apiCall(action, payload) {
+    return this.apiCallImpl(action, payload);
+  };
+  patchSafetyContractMethods(app);
+  await app.apiCall("getSettingsBootstrap");
+  await app.apiCall("saveConfig", { config: {} });
+  const cached = await app.apiCall("getSettingsBootstrap");
+  assert.deepEqual(calls, ["getSettingsBootstrap", "saveConfig"]);
+  assert.equal(cached.config.revision, 2);
+  assert.equal(cached.revisions.configRevision, 2);
+});
+
+test("logs first page re-entry reuses the cached page instead of refetching", async () => {
+  const { patchLogPageCache } = loadEnhancementTestHooks();
+  let fetches = 0;
+  const cache = new Map();
+  const app = {
+    logsLoadSeq: 0,
+    logsPageLoading: false,
+    logPage: 1,
+    logStartDate: "2026-01-01",
+    logEndDate: "2026-01-02",
+    logSearchKeyword: "",
+    logsRequestGroupFilter: "",
+    logsStatusGroupFilter: "",
+    isRouteLoadCurrent: () => true,
+    isLogFeatureEnabled: () => true,
+    ensureLogDateRange() {
+      return { startDate: this.logStartDate, endDate: this.logEndDate };
+    },
+    getRuntimeLogSearchMode() {
+      return "fts";
+    },
+    buildLogPaginationSignature(filters) {
+      return JSON.stringify(filters);
+    },
+    getCachedLogPage(page, signature) {
+      return cache.get(signature) || null;
+    },
+    applyCachedLogPage(entry, signature) {
+      this.logPaginationSignature = signature;
+      this.logRows = entry.logs;
+    },
+    async loadLogs(page = this.logPage) {
+      fetches += 1;
+      const signature = this.buildLogPaginationSignature({
+        keyword: this.logSearchKeyword,
+        searchMode: this.getRuntimeLogSearchMode(),
+        requestGroup: this.logsRequestGroupFilter,
+        statusGroup: this.logsStatusGroupFilter,
+        startDate: this.logStartDate,
+        endDate: this.logEndDate,
+      });
+      cache.set(signature, {
+        page: 1,
+        logs: [{ id: 1 }],
+        totalPages: 1,
+        hasPrevPage: false,
+        hasNextPage: false,
+        pageCursor: null,
+        nextCursor: null,
+      });
+    },
+  };
+  patchLogPageCache(app);
+  await app.loadLogs(1);
+  await app.loadLogs(1);
+  assert.equal(fetches, 1);
+  assert.deepEqual(app.logRows, [{ id: 1 }]);
+  app.logSearchKeyword = "error";
+  await app.loadLogs(1);
+  assert.equal(fetches, 2);
+  app.isLogFeatureEnabled = () => false;
+  await app.loadLogs(1);
+  assert.equal(fetches, 3);
+});
+
+test("dashboard reuses the cached snapshot and skips repeat requests within a minute", async () => {
+  const { patchSafetyContractMethods, dashboardLayerState } = loadEnhancementTestHooks();
+  const calls = [];
+  let snapshotStatus = "cache";
+  const app = {
+    dashboardRefreshPending: false,
+    dashboardD1WriteHotspot: {},
+    dashboardView: { nodes: {} },
+    dashboardRuntimeView: {},
+    runtimeConfig: {},
+    isRouteLoadCurrent: () => true,
+    async loadDashboard() {},
+    applyDashboardStatsState() {},
+    applyRuntimeStatusState() {},
+    applyDashboardErrorState() {},
+    applyRuntimeStatusErrorState() {},
+    patchAdminBootstrapCache() {},
+    showMessage() {},
+    async apiCall(action) {
+      calls.push(action);
+      if (action === "getDashboardCachedSnapshot") {
+        return {
+          snapshot: {
+            stats: { nodes: {} },
+            runtimeStatus: {},
+            cacheMeta: { cacheStatus: snapshotStatus },
+          },
+        };
+      }
+      if (action === "getDashboardCoreStats") return { nodes: {} };
+      if (action === "saveConfig") return { config: {}, revisions: { configRevision: "2" } };
+      return { status: {} };
+    },
+  };
+  patchSafetyContractMethods(app);
+  await app.loadDashboard(null);
+  assert.deepEqual(calls, ["getDashboardCachedSnapshot"]);
+  calls.length = 0;
+  await app.loadDashboard(null);
+  assert.deepEqual(calls, []);
+  calls.length = 0;
+  await app.apiCall("saveConfig", { config: {} });
+  assert.deepEqual(calls, ["saveConfig"]);
+  calls.length = 0;
+  await app.loadDashboard(null);
+  assert.deepEqual(calls, ["getDashboardCachedSnapshot"]);
+  calls.length = 0;
+  await app.loadDashboard(null, { forceRefresh: true });
+  assert.deepEqual(calls, ["getDashboardCoreStats", "getRuntimeStatus"]);
+  calls.length = 0;
+  snapshotStatus = "stale";
+  dashboardLayerState.statsLoadedAt = 0;
+  dashboardLayerState.runtimeLoadedAt = 0;
+  await app.loadDashboard(null);
+  assert.deepEqual(calls, [
+    "getDashboardCachedSnapshot",
+    "getDashboardCoreStats",
+    "getRuntimeStatus",
+  ]);
 });
