@@ -14742,7 +14742,10 @@ function zg(o = {}, e = {}) {
           i.body?.cancel?.();
         } catch {
         }
-        return c(), l.dispose(), e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, 404, t.defaultOutboundColo, {
+        return c(), l.dispose(), e.shouldRecordAccessLog(t, {
+          statusCode: 404,
+          category: e.classifyProxyLogCategory(t.requestTraits)
+        }) && e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, 404, t.defaultOutboundColo, {
           redirectTrace: g,
           decisionReason: "web_proxy_disabled"
         })), _n(t.requestMethod, t.dynamicCors);
@@ -14765,7 +14768,10 @@ function zg(o = {}, e = {}) {
       return e.applyProxyRedirectHeaders(h, i, r, t.nodeName, t.nodeKey, m, s, {
         linkVariant: t.linkVariant,
         entryMode: t.entryMode
-      }), e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, i.status, t.defaultOutboundColo || "", {
+      }), e.shouldRecordAccessLog(t, {
+        statusCode: i.status,
+        category: e.classifyProxyLogCategory(t.requestTraits)
+      }) && e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, i.status, t.defaultOutboundColo || "", {
         directRedirectUrl: m,
         redirectTrace: p,
         decisionReason: String(n?.reason || n?.traceLabel || "").trim()
@@ -14802,7 +14808,10 @@ function zg(o = {}, e = {}) {
       return e.applyProxyRedirectHeaders(u, d, i, t.nodeName, t.nodeKey, l, l, {
         linkVariant: t.linkVariant,
         entryMode: t.entryMode
-      }), e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, 307, "")), new Response(null, {
+      }), e.shouldRecordAccessLog(t, {
+        statusCode: 307,
+        category: e.classifyProxyLogCategory(t.requestTraits)
+      }) && e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, 307, "")), new Response(null, {
         status: 307,
         statusText: "Temporary Redirect",
         headers: u
@@ -15846,21 +15855,26 @@ function qg(o = {}, e = {}) {
       return t.requestLifecycle?.dispose?.(), a;
     },
     buildManagedProxyResponseBody(t, r, a) {
-      const n = r.response.body, s = t.requestLifecycle, i = a && typeof a == "object" ? a : e.shouldRecordAccessLog(t, {
-        statusCode: r.response.status,
-        category: e.classifyProxyLogCategory(t.requestTraits)
-      }, { statusFinal: !1 }) ? {
-        statusCode: r.response.status,
-        category: e.classifyProxyLogCategory(t.requestTraits),
-        errorDetail: null,
-        detailJson: e.buildStructuredLogDetail(t, { statusCode: r.response.status }, {
-          deliveryMode: "proxy",
-          redirectMode: "proxied_follow",
-          decisionReason: "proxied_follow",
-          upstreamHost: r.finalUrl?.hostname || r.activeTargetBase?.hostname || "",
-          upstreamStatus: r.response.status
-        })
-      } : null;
+      const n = r.response.body, s = t.requestLifecycle;
+      let i = a && typeof a == "object" ? a : null;
+      if (!i) {
+        const T = e.classifyProxyLogCategory(t.requestTraits);
+        e.shouldRecordAccessLog(t, {
+          statusCode: r.response.status,
+          category: T
+        }, { statusFinal: !1 }) && (i = {
+          statusCode: r.response.status,
+          category: T,
+          errorDetail: null,
+          detailJson: e.buildStructuredLogDetail(t, { statusCode: r.response.status }, {
+            deliveryMode: "proxy",
+            redirectMode: "proxied_follow",
+            decisionReason: "proxied_follow",
+            upstreamHost: r.finalUrl?.hostname || r.activeTargetBase?.hostname || "",
+            upstreamStatus: r.response.status
+          })
+        });
+      }
       if (!n || t.requestMethod === "HEAD" || !s) {
         try {
           r.releaseFetchController?.();

@@ -23214,13 +23214,19 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
         } catch {}
         releaseProbeFetchController();
         probeLifecycle.dispose();
-        kernel.recordAccessLog(
-          execution,
-          kernel.buildDirectAccessLogPayload(execution, 404, execution.defaultOutboundColo, {
-            redirectTrace,
-            decisionReason: "web_proxy_disabled",
-          }),
-        );
+        if (
+          kernel.shouldRecordAccessLog(execution, {
+            statusCode: 404,
+            category: kernel.classifyProxyLogCategory(execution.requestTraits),
+          })
+        )
+          kernel.recordAccessLog(
+            execution,
+            kernel.buildDirectAccessLogPayload(execution, 404, execution.defaultOutboundColo, {
+              redirectTrace,
+              decisionReason: "web_proxy_disabled",
+            }),
+          );
         return buildEmbyWebProxyDisabledResponse(execution.requestMethod, execution.dynamicCors);
       }
       const directRedirectUrl =
@@ -23272,19 +23278,27 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           entryMode: execution.entryMode,
         },
       );
-      kernel.recordAccessLog(
-        execution,
-        kernel.buildDirectAccessLogPayload(
+      if (
+        kernel.shouldRecordAccessLog(execution, {
+          statusCode: probeResponse.status,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+        })
+      )
+        kernel.recordAccessLog(
           execution,
-          probeResponse.status,
-          execution.defaultOutboundColo || "",
-          {
-            directRedirectUrl,
-            redirectTrace,
-            decisionReason: String(entryDecision?.reason || entryDecision?.traceLabel || "").trim(),
-          },
-        ),
-      );
+          kernel.buildDirectAccessLogPayload(
+            execution,
+            probeResponse.status,
+            execution.defaultOutboundColo || "",
+            {
+              directRedirectUrl,
+              redirectTrace,
+              decisionReason: String(
+                entryDecision?.reason || entryDecision?.traceLabel || "",
+              ).trim(),
+            },
+          ),
+        );
       releaseProbeFetchController();
       probeLifecycle.dispose();
       return new Response(execution.requestMethod === "HEAD" ? null : probeResponse.body, {
@@ -23373,7 +23387,13 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
           entryMode: execution.entryMode,
         },
       );
-      kernel.recordAccessLog(execution, kernel.buildDirectAccessLogPayload(execution, 307, ""));
+      if (
+        kernel.shouldRecordAccessLog(execution, {
+          statusCode: 307,
+          category: kernel.classifyProxyLogCategory(execution.requestTraits),
+        })
+      )
+        kernel.recordAccessLog(execution, kernel.buildDirectAccessLogPayload(execution, 307, ""));
       return new Response(null, {
         status: 307,
         statusText: "Temporary Redirect",
@@ -25356,37 +25376,38 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
     buildManagedProxyResponseBody(execution, upstreamState, successLogPayload) {
       const upstreamBody = upstreamState.response.body;
       const requestLifecycle = execution.requestLifecycle;
-      const successPayload =
-        successLogPayload && typeof successLogPayload === "object"
-          ? successLogPayload
-          : kernel.shouldRecordAccessLog(
-                execution,
-                {
-                  statusCode: upstreamState.response.status,
-                  category: kernel.classifyProxyLogCategory(execution.requestTraits),
-                },
-                { statusFinal: false },
-              )
-            ? {
-                statusCode: upstreamState.response.status,
-                category: kernel.classifyProxyLogCategory(execution.requestTraits),
-                errorDetail: null,
-                detailJson: kernel.buildStructuredLogDetail(
-                  execution,
-                  { statusCode: upstreamState.response.status },
-                  {
-                    deliveryMode: "proxy",
-                    redirectMode: "proxied_follow",
-                    decisionReason: "proxied_follow",
-                    upstreamHost:
-                      upstreamState.finalUrl?.hostname ||
-                      upstreamState.activeTargetBase?.hostname ||
-                      "",
-                    upstreamStatus: upstreamState.response.status,
-                  },
-                ),
-              }
-            : null;
+      let successPayload =
+        successLogPayload && typeof successLogPayload === "object" ? successLogPayload : null;
+      if (!successPayload) {
+        const logCategory = kernel.classifyProxyLogCategory(execution.requestTraits);
+        // 流式响应体的状态码要等流结束才定，这里只按资源类别决定要不要准备日志载荷
+        if (
+          kernel.shouldRecordAccessLog(
+            execution,
+            { statusCode: upstreamState.response.status, category: logCategory },
+            { statusFinal: false },
+          )
+        )
+          successPayload = {
+            statusCode: upstreamState.response.status,
+            category: logCategory,
+            errorDetail: null,
+            detailJson: kernel.buildStructuredLogDetail(
+              execution,
+              { statusCode: upstreamState.response.status },
+              {
+                deliveryMode: "proxy",
+                redirectMode: "proxied_follow",
+                decisionReason: "proxied_follow",
+                upstreamHost:
+                  upstreamState.finalUrl?.hostname ||
+                  upstreamState.activeTargetBase?.hostname ||
+                  "",
+                upstreamStatus: upstreamState.response.status,
+              },
+            ),
+          };
+      }
       if (!upstreamBody || execution.requestMethod === "HEAD" || !requestLifecycle) {
         try {
           upstreamState.releaseFetchController?.();

@@ -7826,6 +7826,92 @@ test("access-log pre-gate matches the conditions Logger.record applies", () => {
   );
 });
 
+// 门禁是 record 的复制品，两者必须同进同退：对同一组输入，门禁说 true 时
+// record 必须真的入队，门禁说 false 时 record 必须什么都不写。
+test("access-log pre-gate agrees with what Logger.record actually queues", () => {
+  const cases = [
+    {
+      name: "image poster filtered by default",
+      config: { logEnabled: true, logWriteMode: "all" },
+      proxyPath: "/Items/1/Images/Primary",
+      statusCode: 200,
+    },
+    {
+      name: "image poster allowed explicitly",
+      config: { logEnabled: true, logWriteMode: "all", logWriteImagePoster: true },
+      proxyPath: "/Items/1/Images/Primary",
+      statusCode: 200,
+    },
+    {
+      name: "media metadata filtered by default",
+      config: { logEnabled: true, logWriteMode: "all" },
+      proxyPath: "/Items/1",
+      statusCode: 200,
+    },
+    {
+      name: "media metadata allowed explicitly",
+      config: { logEnabled: true, logWriteMode: "all", logWriteMediaMetadata: true },
+      proxyPath: "/Items/1",
+      statusCode: 200,
+    },
+    {
+      name: "error-only mode drops a success",
+      config: { logEnabled: true, logWriteMode: "error" },
+      proxyPath: "/Videos/1/stream",
+      statusCode: 200,
+    },
+    {
+      name: "error-only mode keeps a failure",
+      config: { logEnabled: true, logWriteMode: "error" },
+      proxyPath: "/Videos/1/stream",
+      statusCode: 503,
+    },
+    {
+      name: "default config keeps a stream success",
+      config: { logEnabled: true, logWriteMode: "all" },
+      proxyPath: "/Videos/1/stream",
+      statusCode: 206,
+    },
+    {
+      name: "OPTIONS is never logged",
+      config: { logEnabled: true, logWriteMode: "all" },
+      proxyPath: "/Items/1",
+      requestMethod: "OPTIONS",
+      statusCode: 204,
+    },
+  ];
+
+  for (const item of cases) {
+    const requestMethod = item.requestMethod || "GET";
+    const category = "api";
+    const db = {};
+    const state = logBindingStates.get(db);
+    state.LogQueue.length = 0;
+    state.LogDedupe.clear();
+    testPlatform.fetch.logger.record(
+      { DB: db },
+      { waitUntil() {} },
+      {
+        runtimeConfig: item.config,
+        nodeName: "alpha",
+        requestPath: item.proxyPath,
+        requestMethod,
+        statusCode: item.statusCode,
+        category,
+      },
+    );
+    const queued = state.LogQueue.length > 0;
+    state.LogQueue.length = 0;
+    state.LogDedupe.clear();
+
+    const gate = proxyService.shouldRecordAccessLog(
+      { currentConfig: item.config, requestMethod, proxyPath: item.proxyPath },
+      { statusCode: item.statusCode, category },
+    );
+    assert.equal(gate, queued, `${item.name}: gate=${gate} but record queued=${queued}`);
+  }
+});
+
 test("filtered access logs skip diagnostic construction in buildSuccessResponse", async () => {
   const buildExecution = (config) => ({
     request: new Request("https://worker.test/alpha/Items/1/Images/Primary"),
@@ -7949,6 +8035,55 @@ test("cache-hit and throttle paths build detailJson only when the log is written
     proxyService.recordAccessLog = originalRecordAccessLog;
     proxyService.buildStructuredLogDetail = originalBuildStructuredLogDetail;
   }
+});
+
+// statusFinal:false 的唯一理由：流式响应体的 200 可能在流结束后变成错误，
+// 错误日志不能因为前置门禁而丢掉。
+test("managed stream errors still log under error-only mode", async () => {
+  const listeners = new Set();
+  const lifecycle = {
+    abortReason: "",
+    onAbort(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    getAbortReason() {
+      return this.abortReason;
+    },
+    abort(reason) {
+      this.abortReason = reason;
+      for (const listener of [...listeners]) listener(reason);
+    },
+    dispose() {},
+  };
+  const execution = {
+    requestMethod: "GET",
+    request: new Request("https://worker.test/alpha/Videos/1/stream"),
+    requestUrl: new URL("https://worker.test/alpha/Videos/1/stream"),
+    proxyPath: "/Videos/1/stream",
+    requestTraits: { isBigStream: true },
+    upstreamTimeoutMs: 0,
+    currentConfig: { logEnabled: true, logWriteMode: "error" },
+    requestLifecycle: lifecycle,
+  };
+  const upstreamState = {
+    response: new Response(new ReadableStream({ start() {} }), { status: 200 }),
+    finalUrl: new URL("https://origin.test/Videos/1/stream"),
+    activeTargetBase: new URL("https://origin.test"),
+  };
+  const payloads = [];
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  proxyService.recordAccessLog = (_execution, payload) => payloads.push(payload);
+  try {
+    proxyService.buildManagedProxyResponseBody(execution, upstreamState, null);
+    lifecycle.abort("upstream_reset");
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+  }
+  assert.equal(payloads.length, 1, "a stream abort must still be logged in error-only mode");
+  assert.equal(payloads[0].statusCode, 502);
+  assert.equal(payloads[0].category, "error");
 });
 test("oversized PlaybackInfo responses are not retained in isolate memory", async () => {
   isolateState.PlaybackInfoResponseCache.clear();
