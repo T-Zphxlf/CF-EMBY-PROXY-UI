@@ -2732,7 +2732,8 @@ const ADMIN_RUNTIME_ENHANCEMENT_SCRIPT = `<script data-admin-runtime-enhancement
             this.showMessage('仪表盘部分刷新失败，已保留其余可用状态。', { tone: 'warning', modal: true });
           }
         }
-        if (forceRefresh && loadSeq === dashboardLayerState.loadSeq) this.dashboardRefreshPending = false;
+        // 强制刷新同一时刻只有一个在飞，被后来的普通加载顶掉也必须解锁，否则刷新按钮永久失效。
+        if (forceRefresh) this.dashboardRefreshPending = false;
         return results;
       };
     }

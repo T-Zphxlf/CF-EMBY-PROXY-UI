@@ -2055,3 +2055,48 @@ test("dashboard reuses the cached snapshot and skips repeat requests within a mi
     "getRuntimeStatus",
   ]);
 });
+
+test("forced dashboard refresh unlocks itself even when a later load supersedes it", async () => {
+  const { patchSafetyContractMethods } = loadEnhancementTestHooks();
+  const calls = [];
+  const pendingStats = [];
+  let gated = true;
+  const app = {
+    dashboardRefreshPending: false,
+    dashboardD1WriteHotspot: {},
+    dashboardView: { nodes: {} },
+    dashboardRuntimeView: {},
+    runtimeConfig: {},
+    isRouteLoadCurrent: () => true,
+    async loadDashboard() {},
+    applyDashboardStatsState() {},
+    applyRuntimeStatusState() {},
+    applyDashboardErrorState() {},
+    applyRuntimeStatusErrorState() {},
+    patchAdminBootstrapCache() {},
+    showMessage() {},
+    async apiCall(action) {
+      calls.push(action);
+      if (action === "getDashboardCachedSnapshot") return { snapshot: null };
+      if (action === "getDashboardCoreStats") {
+        if (!gated) return { nodes: {} };
+        return await new Promise((resolve) => pendingStats.push(() => resolve({ nodes: {} })));
+      }
+      return { status: {} };
+    },
+  };
+  patchSafetyContractMethods(app);
+  const forced = app.loadDashboard(null, { forceRefresh: true });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(app.dashboardRefreshPending, true);
+  // 普通加载把 loadSeq 顶掉：强制刷新回来时不能因为序号不匹配就漏掉解锁。
+  const superseding = app.loadDashboard(null);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  gated = false;
+  pendingStats.splice(0).forEach((resolveStats) => resolveStats());
+  await Promise.all([forced, superseding]);
+  assert.equal(app.dashboardRefreshPending, false);
+  calls.length = 0;
+  await app.loadDashboard(null, { forceRefresh: true });
+  assert.ok(calls.includes("getDashboardCoreStats"), "强制刷新不应被卡住的 pending 挡掉");
+});
