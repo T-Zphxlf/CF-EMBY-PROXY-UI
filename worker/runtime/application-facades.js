@@ -7509,17 +7509,20 @@ function redactAdminRuntimeConfig(input = {}) {
   const redacted = sanitizeRuntimeConfig(input);
   return redacted;
 }
-function mergeMissingRuntimeConfigSecrets(input = {}, currentConfig = {}) {
+// 备份与局部保存里缺失这些字段时沿用现有值：密钥不能被清空，皮肤也不该被旧备份重置。
+function mergeMissingConfigFields(input = {}, currentConfig = {}) {
   const importedConfig = isPlainObject(input) ? { ...input } : {};
   const current = sanitizeRuntimeConfig(currentConfig);
   for (const field of CONFIG_SECRET_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(importedConfig, field)) continue;
     if (String(current[field] || "").length > 0) importedConfig[field] = current[field];
   }
+  if (!Object.prototype.hasOwnProperty.call(importedConfig, "adminUiSkin") && current.adminUiSkin)
+    importedConfig.adminUiSkin = current.adminUiSkin;
   return importedConfig;
 }
 function mergeAdminSettingsRuntimeConfig(input = {}, currentConfig = {}) {
-  const merged = mergeMissingRuntimeConfigSecrets(input, currentConfig);
+  const merged = mergeMissingConfigFields(input, currentConfig);
   const currentIndexRevision = parseAdminLocalIndexSourceUrl(
     sanitizeRuntimeConfig(currentConfig).indexUrl,
   );
@@ -12367,7 +12370,7 @@ function defineNodeActions(dependencies = {}, actions = {}) {
           ? await kernel.captureRuntimeConfigRollbackState(env, kv)
           : null;
         const importedConfig = data.config
-          ? mergeMissingRuntimeConfigSecrets(data.config, currentConfig)
+          ? mergeMissingConfigFields(data.config, currentConfig)
           : null;
         const nodeDnsConfig = importedConfig
           ? sanitizeRuntimeConfig(importedConfig)
@@ -28782,7 +28785,16 @@ function defineProxyTransportMethods(dependencies = {}, kernel = {}) {
         modifiedHeaders.set("Cache-Control", "no-store");
         return;
       }
-      if (!isClientFollowableRedirectStatus(response.status)) return;
+      if (!isClientFollowableRedirectStatus(response.status)) {
+        // 不重写跳转目标，但上游 Location 里的 userinfo 同样不能下发到客户端。
+        const passthroughLocation = modifiedHeaders.get("Location");
+        if (passthroughLocation)
+          modifiedHeaders.set(
+            "Location",
+            stripClientRedirectCredentials(passthroughLocation, activeTargetBase),
+          );
+        return;
+      }
       const location = modifiedHeaders.get("Location");
       if (!location) return;
       const resolvedTarget = resolveRedirectTarget(location, responseUrl || activeTargetBase);

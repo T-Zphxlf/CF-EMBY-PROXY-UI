@@ -9762,6 +9762,41 @@ test("client redirects keep node-base credentials but drop injected ones", () =>
   assert.equal(apply("https://user:pass@evil.test/x"), "https://evil.test/x");
 });
 
+test("non-followable redirect statuses still strip injected credentials", () => {
+  // 300/305 不重写跳转目标（原样下发上游 Location），但 userinfo 照样不能到客户端。
+  const apply = (status, location) => {
+    const headers = new Headers({ Location: location });
+    proxyService.applyProxyRedirectHeaders(
+      headers,
+      new Response(null, { status, headers: { Location: location } }),
+      new URL("https://user:pass@node.test/emby"),
+      "node",
+      "secret",
+      null,
+      new URL("https://node.test/emby/Videos/1/stream"),
+      {},
+    );
+    return headers.get("Location");
+  };
+  for (const status of [300, 305]) {
+    assert.equal(
+      apply(status, "https://cdnuser:cdnpass@cdn.test/stream?x=1"),
+      "https://cdn.test/stream?x=1",
+      String(status),
+    );
+  }
+  // 可跟随状态走的是重写分支，行为不变。
+  assert.equal(
+    apply(302, "https://cdnuser:cdnpass@cdn.test/stream?x=1"),
+    "https://cdn.test/stream?x=1",
+  );
+  // 非可跟随状态本就不重写目标，所以同基址凭据原样保留、不转成代理路径。
+  assert.equal(
+    apply(300, "https://user:pass@node.test/emby/Videos/2/stream"),
+    "https://user:pass@node.test/emby/Videos/2/stream",
+  );
+});
+
 test("path-like redirect Locations normalize to the same cross-origin target", () => {
   // 这些写法都被 URL 规范解析成同一个绝对跨域 URL：不能因为开头像路径就转成同源代理路径。
   for (const raw of ["//evil.test/x", "/\\evil.test/x", "\\\\evil.test/x", "\t//evil.test/x"]) {

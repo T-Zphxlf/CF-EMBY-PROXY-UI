@@ -104,6 +104,31 @@ test("adminUiSkin persists in KV config and normalizes unknown skins", async () 
   }
 });
 
+test("an older settings backup cannot silently reset the global admin skin", async () => {
+  // 备份导出于 adminUiSkin 上线之前，或导出时勾了隐藏密钥：缺失字段必须沿用现有值。
+  const { kv } = createKv({ "sys:theme": { adminUiSkin: "claude", tgBotToken: "real-token" } });
+  const env = { ENI_KV: kv, __CONFIG_CACHE_NAMESPACE: "config-kv-safety-skin-backup" };
+  const importSettings = (config) =>
+    adminActions.importSettings(
+      { config },
+      { env, ctx: null, kv, request: new Request("https://worker.test/admin", { method: "POST" }) },
+    );
+  invalidateRuntimeConfigCache();
+  try {
+    const imported = await importSettings({ uiRadiusPx: 12 });
+    assert.equal(imported.status, 200);
+    const stored = await kv.get(kernel.CONFIG_KEY, { type: "json" });
+    assert.equal(stored.adminUiSkin, "claude");
+    assert.equal(stored.tgBotToken, "real-token");
+
+    // 备份里明写了皮肤时，导入就是显式选择，仍然覆盖。
+    await importSettings({ adminUiSkin: "classic" });
+    assert.equal((await kv.get(kernel.CONFIG_KEY, { type: "json" })).adminUiSkin, "classic");
+  } finally {
+    invalidateRuntimeConfigCache();
+  }
+});
+
 test("applyKvMutationsWithRollback restores only mutations that completed", async () => {
   const {
     kv,
