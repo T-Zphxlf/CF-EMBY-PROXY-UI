@@ -8085,6 +8085,42 @@ test("managed stream errors still log under error-only mode", async () => {
   assert.equal(payloads[0].statusCode, 502);
   assert.equal(payloads[0].category, "error");
 });
+
+test("upstream error logs respect the same pre-gate", () => {
+  const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
+  let detailBuildCount = 0;
+  proxyService.buildStructuredLogDetail = (...args) => {
+    detailBuildCount += 1;
+    return originalBuildStructuredLogDetail(...args);
+  };
+  const buildExecution = (config) => ({
+    request: new Request("https://worker.test/alpha/Items/1/Images/Primary"),
+    requestTraits: { isImage: true },
+    proxyPath: "/Items/1/Images/Primary",
+    requestMethod: "GET",
+    requestUrl: new URL("https://worker.test/alpha/Items/1/Images/Primary"),
+    finalOrigin: "*",
+    defaultOutboundColo: "",
+    currentConfig: config,
+  });
+  const upstreamError = Object.assign(new Error("upstream go away"), { code: "UPSTREAM_FAILED" });
+  try {
+    const filtered = proxyService.buildErrorResponse(
+      buildExecution({ logEnabled: true, logWriteMode: "all" }),
+      upstreamError,
+    );
+    assert.equal(filtered.status, 502);
+    assert.equal(detailBuildCount, 0, "filtered image error rows must not build detailJson");
+
+    proxyService.buildErrorResponse(
+      buildExecution({ logEnabled: true, logWriteMode: "all", logWriteImagePoster: true }),
+      upstreamError,
+    );
+    assert.equal(detailBuildCount, 1, "enabled image error rows still build detailJson");
+  } finally {
+    proxyService.buildStructuredLogDetail = originalBuildStructuredLogDetail;
+  }
+});
 test("oversized PlaybackInfo responses are not retained in isolate memory", async () => {
   isolateState.PlaybackInfoResponseCache.clear();
   const execution = {

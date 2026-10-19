@@ -11125,8 +11125,7 @@ var ol = [
   ...ol
 ], Jp = new RegExp(ol.join("|"));
 function sl(o = "") {
-  const e = String(o || "").trim().toLowerCase();
-  return !e || nl.has(e) || e === "cookie" ? !1 : Jp.test(e);
+  return !o || nl.has(o) || o === "cookie" ? !1 : Jp.test(o);
 }
 function Qp(o = "") {
   const e = String(o || "").trim().toLowerCase();
@@ -14647,13 +14646,13 @@ function zg(o = {}, e = {}) {
           enableH3: t.enableH3,
           forceH1: t.forceH1,
           imageCacheMaxAge: t.imageCacheMaxAge
-        });
+        }), s = e.classifyProxyLogCategory(t.requestTraits);
         return e.shouldRecordAccessLog(t, {
           statusCode: a.status,
-          category: e.classifyProxyLogCategory(t.requestTraits)
+          category: s
         }) && e.recordAccessLog(t, {
           statusCode: a.status,
-          category: e.classifyProxyLogCategory(t.requestTraits),
+          category: s,
           errorDetail: e.appendLogDiagnosticDetail(e.appendLogDiagnosticDetail(e.extractProxyErrorDetail(a), e.buildStreamDiagnosticDetail(t, a, {
             flow: "cache_hit",
             source: "worker_cache",
@@ -15213,21 +15212,21 @@ function Wg(o = {}, e = {}) {
 function Gg(o = {}, e = {}) {
   return {
     buildErrorResponse(t, r) {
-      const a = r?.message || String(r || "网关或 CF Workers 内部崩溃"), n = String(r?.code || "").toUpperCase(), s = e.buildRedirectDiagnosticDetail(r?.redirectTrace || t.redirectTrace), i = e.buildRuntimeDiagnosticDetail(t);
-      let c = 502, l = "Bad Gateway", d = {
+      const a = r?.message || String(r || "网关或 CF Workers 内部崩溃"), n = String(r?.code || "").toUpperCase();
+      let s = 502, i = "Bad Gateway", c = {
         error: "Bad Gateway",
         code: 502,
         message: "All proxy attempts failed."
       };
-      n === "UPSTREAM_TIMEOUT" || n === "STREAM_IDLE_TIMEOUT" ? (c = 504, l = "Gateway Timeout", d = {
+      n === "UPSTREAM_TIMEOUT" || n === "STREAM_IDLE_TIMEOUT" ? (s = 504, i = "Gateway Timeout", c = {
         error: "Gateway Timeout",
         code: 504,
         message: "Upstream response timed out."
-      }) : n === "DIRECT_TRANSPORT_INCOMPATIBLE" ? (c = 409, l = "Conflict", d = {
+      }) : n === "DIRECT_TRANSPORT_INCOMPATIBLE" ? (s = 409, i = "Conflict", c = {
         error: "Conflict",
         code: 409,
         message: "DIRECT mode is strict and will not fall back to proxy when custom auth headers or cookies are required."
-      }) : (n === "CLIENT_ABORTED" || n === "DOWNSTREAM_CANCELLED" || n === "REQUEST_ABORTED") && (c = 499, l = "Client Closed Request", d = {
+      }) : (n === "CLIENT_ABORTED" || n === "DOWNSTREAM_CANCELLED" || n === "REQUEST_ABORTED") && (s = 499, i = "Client Closed Request", c = {
         error: "Client Closed Request",
         code: 499,
         message: "Client closed request."
@@ -15236,45 +15235,53 @@ function Gg(o = {}, e = {}) {
         t.requestLifecycle?.abort?.(n ? n.toLowerCase() : "proxy_error");
       } catch {
       }
-      t.requestLifecycle?.dispose?.(), n === "DIRECT_TRANSPORT_INCOMPATIBLE" ? e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, c, t.defaultOutboundColo || "", { redirectTrace: r?.redirectTrace || t.redirectTrace })) : e.recordAccessLog(t, {
-        statusCode: c,
-        category: c === 499 ? e.classifyProxyLogCategory(t.requestTraits || {}) : "error",
-        errorDetail: e.appendLogDiagnosticDetail(e.appendLogDiagnosticDetail(a, e.buildStreamDiagnosticDetail(t, null, {
-          flow: "proxy_error",
-          source: "upstream_pending",
-          upstreamHost: r?.lastFinalUrl?.hostname || r?.lastTargetBase?.hostname || "",
-          idleTimeoutMs: e.resolveResponseStreamIdleTimeoutMs(t.requestTraits || {}, t.upstreamTimeoutMs)
-        })), e.appendLogDiagnosticDetail(i, s)),
-        detailJson: e.buildStructuredLogDetail(t, { statusCode: c }, {
-          deliveryMode: "proxy",
-          redirectTrace: r?.redirectTrace || t.redirectTrace,
-          redirectMode: "proxy_error",
-          redirectUrl: r?.lastFinalUrl,
-          decisionReason: n || "proxy_error",
-          protocolFailureReason: e.classifyProtocolFailureReason(r, {
-            errorCode: n,
-            message: a,
-            protocolFallbackRetry: !1,
-            upstreamStatus: c
+      t.requestLifecycle?.dispose?.();
+      const l = s === 499 ? e.classifyProxyLogCategory(t.requestTraits || {}) : "error";
+      if (e.shouldRecordAccessLog(t, {
+        statusCode: s,
+        category: l
+      })) {
+        const u = e.buildRedirectDiagnosticDetail(r?.redirectTrace || t.redirectTrace), f = e.buildRuntimeDiagnosticDetail(t);
+        n === "DIRECT_TRANSPORT_INCOMPATIBLE" ? e.recordAccessLog(t, e.buildDirectAccessLogPayload(t, s, t.defaultOutboundColo || "", { redirectTrace: r?.redirectTrace || t.redirectTrace })) : e.recordAccessLog(t, {
+          statusCode: s,
+          category: l,
+          errorDetail: e.appendLogDiagnosticDetail(e.appendLogDiagnosticDetail(a, e.buildStreamDiagnosticDetail(t, null, {
+            flow: "proxy_error",
+            source: "upstream_pending",
+            upstreamHost: r?.lastFinalUrl?.hostname || r?.lastTargetBase?.hostname || "",
+            idleTimeoutMs: e.resolveResponseStreamIdleTimeoutMs(t.requestTraits || {}, t.upstreamTimeoutMs)
+          })), e.appendLogDiagnosticDetail(f, u)),
+          detailJson: e.buildStructuredLogDetail(t, { statusCode: s }, {
+            deliveryMode: "proxy",
+            redirectTrace: r?.redirectTrace || t.redirectTrace,
+            redirectMode: "proxy_error",
+            redirectUrl: r?.lastFinalUrl,
+            decisionReason: n || "proxy_error",
+            protocolFailureReason: e.classifyProtocolFailureReason(r, {
+              errorCode: n,
+              message: a,
+              protocolFallbackRetry: !1,
+              upstreamStatus: s
+            }),
+            playbackInfoCache: t.playbackInfoCacheState,
+            playbackInfoCacheTtlSec: t.playbackInfoCacheTtlSec,
+            progressRelayMode: t.progressForwardMode,
+            progressIntervalSec: t.videoProgressForwardIntervalSec,
+            upstreamHost: r?.lastFinalUrl?.hostname || r?.lastTargetBase?.hostname || "",
+            upstreamStatus: s
           }),
-          playbackInfoCache: t.playbackInfoCacheState,
-          playbackInfoCacheTtlSec: t.playbackInfoCacheTtlSec,
-          progressRelayMode: t.progressForwardMode,
-          progressIntervalSec: t.videoProgressForwardIntervalSec,
-          upstreamHost: r?.lastFinalUrl?.hostname || r?.lastTargetBase?.hostname || "",
-          upstreamStatus: c
-        }),
-        outboundColo: t.defaultOutboundColo || ""
-      });
-      const u = new Headers({
+          outboundColo: t.defaultOutboundColo || ""
+        });
+      }
+      const d = new Headers({
         "Content-Type": "application/json; charset=utf-8",
         "Access-Control-Allow-Origin": t.finalOrigin || "*",
         "Cache-Control": "no-store"
       });
-      return t.finalOrigin !== "*" && kr(u, "Origin"), Ne(u), new Response(JSON.stringify(d), {
-        status: c,
-        statusText: l,
-        headers: u
+      return t.finalOrigin !== "*" && kr(d, "Origin"), Ne(d), new Response(JSON.stringify(c), {
+        status: s,
+        statusText: i,
+        headers: d
       });
     },
     async handle(t, r, a, n, s, i, c, l = {}) {
@@ -16527,13 +16534,13 @@ function th(o = {}, e = {}) {
         enableH3: a.enableH3,
         forceH1: a.forceH1,
         imageCacheMaxAge: a.imageCacheMaxAge
-      });
+      }), m = e.classifyProxyLogCategory(a.requestTraits);
       return e.shouldRecordAccessLog(a, {
         statusCode: d.status,
-        category: e.classifyProxyLogCategory(a.requestTraits)
+        category: m
       }) && e.recordAccessLog(a, {
         statusCode: d.status,
-        category: e.classifyProxyLogCategory(a.requestTraits),
+        category: m,
         errorDetail: e.appendLogDiagnosticDetail(e.extractProxyErrorDetail(d), e.buildRuntimeDiagnosticDetail(a)),
         detailJson: e.buildStructuredLogDetail(a, { statusCode: d.status }, {
           deliveryMode: "proxy",
@@ -16802,13 +16809,13 @@ function ah(o = {}, e = {}) {
       });
     },
     buildPlaybackProgressThrottleResponse(t) {
-      const r = e.buildEdgeResponseHeaders(t.finalOrigin);
+      const r = e.buildEdgeResponseHeaders(t.finalOrigin), a = e.classifyProxyLogCategory(t.requestTraits);
       return e.shouldRecordAccessLog(t, {
         statusCode: 204,
-        category: e.classifyProxyLogCategory(t.requestTraits)
+        category: a
       }) && e.recordAccessLog(t, {
         statusCode: 204,
-        category: e.classifyProxyLogCategory(t.requestTraits),
+        category: a,
         errorDetail: e.buildProgressRelayDiagnosticDetail(t),
         detailJson: e.buildStructuredLogDetail(t, { statusCode: 204 }, {
           deliveryMode: "proxy",
