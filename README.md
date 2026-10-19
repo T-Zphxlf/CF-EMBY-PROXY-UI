@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-V19.8-2563eb">
+  <img alt="version" src="https://img.shields.io/badge/version-V19.9-2563eb">
   <img alt="platform" src="https://img.shields.io/badge/platform-Cloudflare%20Workers-orange">
   <img alt="storage" src="https://img.shields.io/badge/storage-KV%20%2B%20D1-green">
   <img alt="ui" src="https://img.shields.io/badge/panel-SaaS%20UI-purple">
@@ -13,7 +13,7 @@
 
 > 一个以 `worker/` 为生产源码、以根目录 `worker.js` 为单文件部署产物的 Cloudflare Worker 项目：统一多台 Emby 节点入口、隐藏源站 IP、支持直连/反代混合策略、提供 `ADMIN_PATH`（默认 `/admin`）可视化后台，并集成日志、Cloudflare 统计、Telegram 日报与控制面 / 数据面分层优化。
 
-> 当前 **V19.8** 把交付链路与门禁收敛到构建期：管理端模板没有 module script，构建不再经过打包器，`publish-dist.mjs` 直接把 sync 后的组合产物拷成 `frontend/dist/index.html`（`dist/` 只允许这一个文件，`VITE_CDN_BASE_URL` 与 Vite 的 `base` 归一化退场）；只在请求期生效的 2 MiB 壳层上限与资产策略前移到 `npm run check`，GitHub Actions 在部署前先跑 `npm run check` 和 `npm run build:cdn`。管理端侧新增界面皮肤（经典蓝 / 暖纸）与字体加载，上传类请求不再被 UI 超时中断（中断提示无法证明服务端没写入，重试可能重复部署），自绘弹层补上原生 dialog 语义、焦点管理与 Esc 关闭；配置快照面板与 `__INIT_HEALTH_BANNER__` 占位符连同 sync 里那套“从压缩产物里切除旧 UI”的改写器一并删除，`applyHeadProbeContract` 成为唯一保留的编译产物改写层。Worker 侧 `validateAdminShellHtmlSource` 现在要求壳同时带 enhancement 层的 `<style>` 与 `<script>`，缺层直接拒绝而不是静默降级丢掉皮肤与并发保护；新增 `admin-contract-parity` 契约测试，锁住 action 可被 registry 解析、boot 协议符号在壳层 / loader / 兜底壳三处一致、`frontend/src` 仍只调用可解析 action 并保持 5 个主视图与 8 个设置分区。依赖统一提升到根 `node_modules`，dev-server 改用 `createRequire` 解析 Vite CLI、缓存目录也指到根，仓库里不再出现 `frontend/node_modules`；`CONFIG_AUTHORITY_MODE`、`VITE_VENDOR_MODE`、`VITE_CDN_IMPORT_*` 等已失效的配置项从样例中删除。V19.7 的重定向与鉴权加固、控制面 / 数据面分层、缓存键清洗与转码 `m3u8` 禁缓存等能力全部保留。
+> 当前 **V19.9** 把管理端的重复请求与凭据面一起收口：界面皮肤从浏览器本地偏好升级为 KV 配置字段 `adminUiSkin`（存 `sys:theme`），随 bootstrap 注入首帧即落主题，导入旧备份或局部保存配置时缺失该字段会沿用现值，不再被静默重置；仪表盘分层数据 60 秒内复用（优先 1 小时 D1 快照）、设置 bootstrap 5 秒内合并在飞请求 / 10 秒内直接返回、日志第一页 30 秒内复用，翻页、强刷与跨域一律绕开缓存，保存配置后同时失效仪表盘缓存；强制刷新被后来的普通加载顶掉时也会解锁，刷新按钮不再永久失效；Vue 换成 runtime-only 构建。客户端可见的 `Location` 一律剥离 userinfo，只有与节点基址完全一致（origin + 账号 + 密码）的凭据才保留，路径式跨域写法统一归一为同一绝对目标，非可跟随状态（300/305）同样剥离；跳数预算收敛成单个常量，与 `redirect_limit` 诊断标签不再可能失同步。访问日志改成先判定后构造：命中缓存、进度节流 204、直连 404、探针透传、entry 307 与上游错误等路径都先过 `shouldRecordAccessLog` / `shouldWriteAccessLog`，会被丢弃的行不再构造 `detailJson`，`logWriteMode=error` 下流式中断仍记 502；`Logger.record` 的过滤一处未改，日志行数不变。私有鉴权头名匹配拆出已归一化的 `matchPrivateMediaAuthHeaderName`，元数据缓存身份计算不再对每个头重复 `trim().toLowerCase()`。`worker.js` 标记 `-diff`（压缩器每次重排标识符，产物差异全是改名噪声），新鲜度由 `check-worker-bundle` 守住，bundle 硬守卫提到 1.5 MB。V19.8 的构建期门禁、单文件管理台交付、契约测试与 V19.7 的重定向 / 鉴权加固、控制面与数据面分层、缓存键清洗等能力全部保留。
 
   ![img](https://web.axuitomo.qzz.io/api/p/img/github/PixPin_2026-08-03_14-00-35.png?download=true&sign=TltPfTfUurzkQ5FsY4rpQ1Wd%2Bwu1Oji3rC%2FVo2NbV%2BM%3D%3A0)
 
