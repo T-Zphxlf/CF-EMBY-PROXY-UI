@@ -6595,6 +6595,22 @@ function classifyLogResourceScope(requestPath = "", category = "") {
     return "media_metadata";
   return normalizedCategory || "api";
 }
+// 访问日志是否会被真正写入。Logger.record 与调用方前置判定共用这一处条件，
+// 避免调用方先构造 detailJson 再被 record 丢弃。logEnabled 的队列清理副作用留在 record 里。
+// statusFinal=false 用于响应体托管（流式）的调用点：那里状态码可能在流结束后才变成错误，
+// 只按与状态无关的资源类别过滤，避免漏掉流中途变错误的日志。
+function shouldWriteAccessLog(runtimeConfig = {}, logMeta = {}, options = {}) {
+  if (logMeta.requestMethod === "OPTIONS") return false;
+  const resourceScope = classifyLogResourceScope(logMeta.requestPath, logMeta.category);
+  if (resourceScope === "image_poster" && runtimeConfig?.logWriteImagePoster !== true) return false;
+  if (resourceScope === "media_metadata" && runtimeConfig?.logWriteMediaMetadata !== true)
+    return false;
+  if (options.statusFinal === false) return true;
+  const statusCode = Number(logMeta.statusCode) || 0;
+  if (normalizeLogWriteMode(runtimeConfig?.logWriteMode) === "error")
+    if (statusCode < 400 || statusCode >= 600) return false;
+  return true;
+}
 function isPlaybackInfoLogRequest(requestPath = "", category = "") {
   return classifyLogResourceScope(requestPath, category) === "playback_info";
 }
@@ -16858,13 +16874,16 @@ var PRIVATE_MEDIA_AUTH_COOKIE_KEYWORDS = [
 ];
 // Emby/Jellyfin 服务端只从 Authorization/X-Emby-Token 头或 api_key/ApiKey 查询取 token，不使用 Cookie；
 // 这里按名字特征兜底识别客户端把凭据放进 Cookie 的情况。
+// 关键字全是小写、无正则元字符；一条预编译正则比逐个 includes 便宜，
+// 并且在未命中时是一次线性扫描而不是 13 次。
+var PRIVATE_MEDIA_AUTH_NAME_PATTERN = new RegExp(PRIVATE_MEDIA_AUTH_NAME_KEYWORDS.join("|"));
 function isPotentialPrivateMediaAuthHeaderName(name = "") {
   const normalized = String(name || "")
     .trim()
     .toLowerCase();
   if (!normalized || MEDIA_REDIRECT_SAFE_HEADER_NAMES.has(normalized) || normalized === "cookie")
     return false;
-  return PRIVATE_MEDIA_AUTH_NAME_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  return PRIVATE_MEDIA_AUTH_NAME_PATTERN.test(normalized);
 }
 function isPotentialPrivateMediaAuthCookieName(name = "") {
   const normalized = String(name || "")
@@ -16970,6 +16989,8 @@ function computeWorkerMetadataCacheIdentity(request) {
     const name = String(rawName || "")
       .trim()
       .toLowerCase();
+    // SAFE 集合里的标准鉴权头要留下（isPotential... 对它们返回 false），
+    // 非 SAFE 的名字才按关键字兜底识别。
     if (
       !name ||
       (!MEDIA_REDIRECT_SAFE_HEADER_NAMES.has(name) && !isPotentialPrivateMediaAuthHeaderName(name))
@@ -22084,12 +22105,8 @@ function buildLogger(dependencies = {}) {
         return;
       }
       const statusCode = Number(logData.statusCode) || 0;
+      if (!shouldWriteAccessLog(runtimeConfig, logData)) return;
       const logWriteMode = normalizeLogWriteMode(runtimeConfig.logWriteMode);
-      if (logWriteMode === "error" && (statusCode < 400 || statusCode >= 600)) return;
-      const resourceScope = classifyLogResourceScope(logData.requestPath, logData.category);
-      if (resourceScope === "image_poster" && runtimeConfig.logWriteImagePoster !== true) return;
-      if (resourceScope === "media_metadata" && runtimeConfig.logWriteMediaMetadata !== true)
-        return;
       const writeClientIp = runtimeConfig.logWriteClientIp !== false;
       const writeColo = runtimeConfig.logWriteColo !== false;
       const writeUa = runtimeConfig.logWriteUa !== false;
@@ -23027,7 +23044,7 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
             imageCacheMaxAge: execution.imageCacheMaxAge,
           },
         );
-        kernel.recordAccessLog(execution, {
+        const cacheHitAccessLogPayload = {
           statusCode: cachedResponse.status,
           category: kernel.classifyProxyLogCategory(execution.requestTraits),
           errorDetail: kernel.appendLogDiagnosticDetail(
@@ -23058,7 +23075,9 @@ function defineProxyCacheDeliveryMethods(dependencies = {}, kernel = {}) {
             },
           ),
           outboundColo: "",
-        });
+        };
+        if (kernel.shouldRecordAccessLog(execution, cacheHitAccessLogPayload))
+          kernel.recordAccessLog(execution, cacheHitAccessLogPayload);
         return new Response(cachedResponse.body, {
           status: cachedResponse.status,
           statusText: cachedResponse.statusText,
@@ -23928,88 +23947,102 @@ function defineProxyUpstreamDeliveryMethods(dependencies = {}, kernel = {}) {
         !shouldPlaybackFallbackRedirect &&
         kernel.shouldManageProxyResponseBody(execution, finalUpstreamState);
       const outboundColo = execution.defaultOutboundColo || "";
-      const runtimeDiagnostic = kernel.buildRuntimeDiagnosticDetail(execution);
-      const errorDetail = isDirectAccessLog
-        ? kernel.buildDirectAccessDiagnosticDetail(execution, {
-            directRedirectUrl: finalUpstreamState.directRedirectUrl,
-            redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
-          })
-        : kernel.appendLogDiagnosticDetail(
-            kernel.appendLogDiagnosticDetail(
-              kernel.extractProxyErrorDetail(finalUpstreamState.response),
-              kernel.buildStreamDiagnosticDetail(execution, finalUpstreamState.response, {
-                flow: shouldManageProxyBody ? "managed" : "passthrough",
-                source: "upstream",
-                upstreamHost:
-                  finalUpstreamState.finalUrl?.hostname ||
-                  finalUpstreamState.activeTargetBase?.hostname ||
-                  "",
-                protocolFallbackRetry: finalUpstreamState.protocolFallbackRetry === true,
-                idleTimeoutMs: shouldManageProxyBody
-                  ? kernel.resolveResponseStreamIdleTimeoutMs(
-                      execution.requestTraits,
-                      execution.upstreamTimeoutMs,
-                    )
-                  : 0,
-              }),
-            ),
-            kernel.appendLogDiagnosticDetail(runtimeDiagnostic, redirectDiagnostic),
-          );
-      const successLogPayload = isDirectAccessLog
-        ? kernel.buildDirectAccessLogPayload(execution, clientVisibleStatus, outboundColo, {
-            directRedirectUrl: finalUpstreamState.directRedirectUrl,
-            redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
-          })
-        : {
-            statusCode: shouldPlaybackFallbackRedirect ? clientVisibleStatus : finalStatus,
-            category: kernel.classifyProxyLogCategory(execution.requestTraits),
-            errorDetail,
-            detailJson: kernel.buildStructuredLogDetail(
-              execution,
-              { statusCode: shouldPlaybackFallbackRedirect ? clientVisibleStatus : finalStatus },
-              {
-                transport: null,
-                deliveryMode: "proxy",
-                redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
-                redirectMode: shouldPlaybackFallbackRedirect
-                  ? "playback_relative_fallback"
-                  : finalUpstreamState.redirectTrace?.terminalMode || "proxied_follow",
-                redirectUrl: finalUpstreamState.finalUrl,
-                decisionReason: shouldPlaybackFallbackRedirect
-                  ? "playback_relative_fallback"
-                  : finalUpstreamState.redirectTrace?.terminalMode || "proxied_follow",
-                protocolFailureReason:
-                  finalUpstreamState.protocolFallbackRetry === true ||
-                  finalUpstreamState.protocolFallbackRetryFailed === true
-                    ? kernel.classifyProtocolFailureReason("protocol_fallback", {
-                        upstreamStatus: finalStatus,
-                        protocolFallbackRetry: true,
-                      })
-                    : Number(finalStatus) >= 400
-                      ? kernel.classifyProtocolFailureReason(
-                          errorDetail || finalUpstreamState.response.statusText || "",
-                          {
-                            upstreamStatus: finalStatus,
-                            protocolFallbackRetry:
-                              finalUpstreamState.protocolFallbackRetry === true,
-                          },
-                        )
-                      : null,
-                protocolFallbackRetry: finalUpstreamState.protocolFallbackRetry === true,
-                playbackInfoCache: execution.playbackInfoCacheState,
-                playbackInfoCacheTtlSec: execution.playbackInfoCacheTtlSec,
-                progressRelayMode: execution.progressForwardMode,
-                progressIntervalSec: execution.videoProgressForwardIntervalSec,
-                upstreamHost:
-                  finalUpstreamState.finalUrl?.hostname ||
-                  finalUpstreamState.activeTargetBase?.hostname ||
-                  "",
-                upstreamStatus: finalStatus,
-              },
-            ),
-            outboundColo,
-          };
-      if (!shouldManageProxyBody) {
+      const accessLogStatus = shouldPlaybackFallbackRedirect ? clientVisibleStatus : finalStatus;
+      const accessLogCategory = kernel.classifyProxyLogCategory(execution.requestTraits);
+      // 托管响应体的状态码要等流结束才定，这里只按资源类别过滤（statusFinal: false）
+      const shouldLogAccess = kernel.shouldRecordAccessLog(
+        execution,
+        { statusCode: accessLogStatus, category: accessLogCategory },
+        { statusFinal: !shouldManageProxyBody },
+      );
+      const runtimeDiagnostic = shouldLogAccess
+        ? kernel.buildRuntimeDiagnosticDetail(execution)
+        : "";
+      let errorDetail = "";
+      if (shouldLogAccess)
+        errorDetail = isDirectAccessLog
+          ? kernel.buildDirectAccessDiagnosticDetail(execution, {
+              directRedirectUrl: finalUpstreamState.directRedirectUrl,
+              redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
+            })
+          : kernel.appendLogDiagnosticDetail(
+              kernel.appendLogDiagnosticDetail(
+                kernel.extractProxyErrorDetail(finalUpstreamState.response),
+                kernel.buildStreamDiagnosticDetail(execution, finalUpstreamState.response, {
+                  flow: shouldManageProxyBody ? "managed" : "passthrough",
+                  source: "upstream",
+                  upstreamHost:
+                    finalUpstreamState.finalUrl?.hostname ||
+                    finalUpstreamState.activeTargetBase?.hostname ||
+                    "",
+                  protocolFallbackRetry: finalUpstreamState.protocolFallbackRetry === true,
+                  idleTimeoutMs: shouldManageProxyBody
+                    ? kernel.resolveResponseStreamIdleTimeoutMs(
+                        execution.requestTraits,
+                        execution.upstreamTimeoutMs,
+                      )
+                    : 0,
+                }),
+              ),
+              kernel.appendLogDiagnosticDetail(runtimeDiagnostic, redirectDiagnostic),
+            );
+      let successLogPayload = null;
+      if (shouldLogAccess)
+        successLogPayload = isDirectAccessLog
+          ? kernel.buildDirectAccessLogPayload(execution, clientVisibleStatus, outboundColo, {
+              directRedirectUrl: finalUpstreamState.directRedirectUrl,
+              redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
+            })
+          : {
+              statusCode: accessLogStatus,
+              category: accessLogCategory,
+              errorDetail,
+              detailJson: kernel.buildStructuredLogDetail(
+                execution,
+                { statusCode: shouldPlaybackFallbackRedirect ? clientVisibleStatus : finalStatus },
+                {
+                  transport: null,
+                  deliveryMode: "proxy",
+                  redirectTrace: finalUpstreamState.redirectTrace || execution.redirectTrace,
+                  redirectMode: shouldPlaybackFallbackRedirect
+                    ? "playback_relative_fallback"
+                    : finalUpstreamState.redirectTrace?.terminalMode || "proxied_follow",
+                  redirectUrl: finalUpstreamState.finalUrl,
+                  decisionReason: shouldPlaybackFallbackRedirect
+                    ? "playback_relative_fallback"
+                    : finalUpstreamState.redirectTrace?.terminalMode || "proxied_follow",
+                  protocolFailureReason:
+                    finalUpstreamState.protocolFallbackRetry === true ||
+                    finalUpstreamState.protocolFallbackRetryFailed === true
+                      ? kernel.classifyProtocolFailureReason("protocol_fallback", {
+                          upstreamStatus: finalStatus,
+                          protocolFallbackRetry: true,
+                        })
+                      : Number(finalStatus) >= 400
+                        ? kernel.classifyProtocolFailureReason(
+                            errorDetail || finalUpstreamState.response.statusText || "",
+                            {
+                              upstreamStatus: finalStatus,
+                              protocolFallbackRetry:
+                                finalUpstreamState.protocolFallbackRetry === true,
+                            },
+                          )
+                        : null,
+                  protocolFallbackRetry: finalUpstreamState.protocolFallbackRetry === true,
+                  playbackInfoCache: execution.playbackInfoCacheState,
+                  playbackInfoCacheTtlSec: execution.playbackInfoCacheTtlSec,
+                  progressRelayMode: execution.progressForwardMode,
+                  progressIntervalSec: execution.videoProgressForwardIntervalSec,
+                  upstreamHost:
+                    finalUpstreamState.finalUrl?.hostname ||
+                    finalUpstreamState.activeTargetBase?.hostname ||
+                    "",
+                  upstreamStatus: finalStatus,
+                },
+              ),
+              outboundColo,
+            };
+      if (!shouldManageProxyBody && successLogPayload) {
         kernel.recordAccessLog(execution, successLogPayload);
       }
       if (
@@ -25320,25 +25353,34 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
       const successPayload =
         successLogPayload && typeof successLogPayload === "object"
           ? successLogPayload
-          : {
-              statusCode: upstreamState.response.status,
-              category: kernel.classifyProxyLogCategory(execution.requestTraits),
-              errorDetail: null,
-              detailJson: kernel.buildStructuredLogDetail(
+          : kernel.shouldRecordAccessLog(
                 execution,
-                { statusCode: upstreamState.response.status },
                 {
-                  deliveryMode: "proxy",
-                  redirectMode: "proxied_follow",
-                  decisionReason: "proxied_follow",
-                  upstreamHost:
-                    upstreamState.finalUrl?.hostname ||
-                    upstreamState.activeTargetBase?.hostname ||
-                    "",
-                  upstreamStatus: upstreamState.response.status,
+                  statusCode: upstreamState.response.status,
+                  category: kernel.classifyProxyLogCategory(execution.requestTraits),
                 },
-              ),
-            };
+                { statusFinal: false },
+              )
+            ? {
+                statusCode: upstreamState.response.status,
+                category: kernel.classifyProxyLogCategory(execution.requestTraits),
+                errorDetail: null,
+                detailJson: kernel.buildStructuredLogDetail(
+                  execution,
+                  { statusCode: upstreamState.response.status },
+                  {
+                    deliveryMode: "proxy",
+                    redirectMode: "proxied_follow",
+                    decisionReason: "proxied_follow",
+                    upstreamHost:
+                      upstreamState.finalUrl?.hostname ||
+                      upstreamState.activeTargetBase?.hostname ||
+                      "",
+                    upstreamStatus: upstreamState.response.status,
+                  },
+                ),
+              }
+            : null;
       if (!upstreamBody || execution.requestMethod === "HEAD" || !requestLifecycle) {
         try {
           upstreamState.releaseFetchController?.();
@@ -25351,7 +25393,7 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
         execution.requestTraits,
         execution.upstreamTimeoutMs,
       );
-      const successPayloadWithDiagnostic = {
+      const successPayloadWithDiagnostic = successPayload && {
         ...successPayload,
         detailJson:
           successPayload?.detailJson ||
@@ -25397,7 +25439,7 @@ function defineProxyMetadataResponseMethods(dependencies = {}, kernel = {}) {
       let removeAbortListener = () => {};
       let logWritten = false;
       const recordStreamLog = (override = {}) => {
-        if (logWritten) return;
+        if (logWritten || !successPayloadWithDiagnostic) return;
         logWritten = true;
         /** @type {Record<string, any>} */
         const mergedPayload = {
@@ -25871,6 +25913,23 @@ function defineProxyUpstreamFetchMethods(dependencies = {}, kernel = {}) {
 function defineProxyAccessLogMethods(dependencies = {}, kernel = {}) {
   const { Logger } = dependencies;
   return {
+    // 调用方在构造 detailJson/诊断字符串之前先用它短路；未知配置时返回 true，保持原有行为。
+    shouldRecordAccessLog(execution = {}, payload = {}, options = {}) {
+      const runtimeConfig = isPlainObject(execution.currentConfig)
+        ? execution.currentConfig
+        : getCachedRuntimeConfig(execution.env);
+      if (!isPlainObject(runtimeConfig)) return true;
+      return shouldWriteAccessLog(
+        runtimeConfig,
+        {
+          requestMethod: execution.requestMethod,
+          requestPath: execution.proxyPath,
+          statusCode: payload.statusCode,
+          category: payload.category,
+        },
+        options,
+      );
+    },
     recordAccessLog(execution, payload = {}) {
       const logData = {
         nodeName: execution.nodeName,
@@ -26508,11 +26567,17 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
           imageCacheMaxAge: execution.imageCacheMaxAge,
         },
       );
-      const errorDetail = kernel.appendLogDiagnosticDetail(
-        kernel.extractProxyErrorDetail(cachedResponse),
-        kernel.buildRuntimeDiagnosticDetail(execution),
-      );
-      kernel.recordAccessLog(execution, {
+      const shouldLogCacheHit = kernel.shouldRecordAccessLog(execution, {
+        statusCode: cachedResponse.status,
+        category: kernel.classifyProxyLogCategory(execution.requestTraits),
+      });
+      const errorDetail = !shouldLogCacheHit
+        ? ""
+        : kernel.appendLogDiagnosticDetail(
+            kernel.extractProxyErrorDetail(cachedResponse),
+            kernel.buildRuntimeDiagnosticDetail(execution),
+          );
+      const cacheHitAccessLogPayload = {
         statusCode: cachedResponse.status,
         category: kernel.classifyProxyLogCategory(execution.requestTraits),
         errorDetail,
@@ -26529,7 +26594,8 @@ function definePlaybackExecutionCacheMethods(dependencies = {}, kernel = {}) {
           },
         ),
         outboundColo: "",
-      });
+      };
+      if (shouldLogCacheHit) kernel.recordAccessLog(execution, cacheHitAccessLogPayload);
       return new Response(execution.requestMethod === "HEAD" ? null : cachedBodyText, {
         status: cachedResponse.status,
         statusText: cachedResponse.statusText,
@@ -26954,8 +27020,14 @@ function definePlaybackProgressRelayMethods(dependencies = {}, kernel = {}) {
     },
     buildPlaybackProgressThrottleResponse(execution) {
       const responseHeaders = kernel.buildEdgeResponseHeaders(execution.finalOrigin);
-      const errorDetail = kernel.buildProgressRelayDiagnosticDetail(execution);
-      kernel.recordAccessLog(execution, {
+      const shouldLogThrottle = kernel.shouldRecordAccessLog(execution, {
+        statusCode: 204,
+        category: kernel.classifyProxyLogCategory(execution.requestTraits),
+      });
+      const errorDetail = shouldLogThrottle
+        ? kernel.buildProgressRelayDiagnosticDetail(execution)
+        : "";
+      const throttleAccessLogPayload = {
         statusCode: 204,
         category: kernel.classifyProxyLogCategory(execution.requestTraits),
         errorDetail,
@@ -26972,7 +27044,8 @@ function definePlaybackProgressRelayMethods(dependencies = {}, kernel = {}) {
           },
         ),
         outboundColo: execution.defaultOutboundColo || "",
-      });
+      };
+      if (shouldLogThrottle) kernel.recordAccessLog(execution, throttleAccessLogPayload);
       return new Response(null, {
         status: 204,
         statusText: "No Content",

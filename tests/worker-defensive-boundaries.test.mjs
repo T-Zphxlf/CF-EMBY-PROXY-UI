@@ -7758,6 +7758,130 @@ test("local firewall, rate-limit, and invalid-target errors remain text response
   assert.equal(await invalidResponse.text(), "Invalid Node Target");
 });
 
+// shouldRecordAccessLog 是 Logger.record 前置短路，必须与 record 的实际写入条件一致。
+test("access-log pre-gate matches the conditions Logger.record applies", () => {
+  const baseExecution = (config, overrides = {}) => ({
+    currentConfig: config,
+    requestMethod: "GET",
+    proxyPath: "/Items/1/Images/Primary",
+    requestTraits: { isImage: true },
+    ...overrides,
+  });
+  const imageConfig = { logEnabled: true, logWriteMode: "all", logWriteImagePoster: false };
+  assert.equal(
+    proxyService.shouldRecordAccessLog(baseExecution(imageConfig), { statusCode: 200 }),
+    false,
+  );
+  assert.equal(
+    proxyService.shouldRecordAccessLog(
+      baseExecution({ ...imageConfig, logWriteImagePoster: true }),
+      { statusCode: 200 },
+    ),
+    true,
+  );
+
+  const metadataConfig = { logEnabled: true, logWriteMode: "all", logWriteMediaMetadata: false };
+  const metadataExecution = baseExecution(metadataConfig, {
+    proxyPath: "/Items/1",
+  });
+  assert.equal(proxyService.shouldRecordAccessLog(metadataExecution, { statusCode: 200 }), false);
+  assert.equal(
+    proxyService.shouldRecordAccessLog(
+      baseExecution({ ...metadataConfig, logWriteMediaMetadata: true }, { proxyPath: "/Items/1" }),
+      { statusCode: 200 },
+    ),
+    true,
+  );
+
+  const errorOnlyConfig = { logEnabled: true, logWriteMode: "error" };
+  const streamExecution = baseExecution(errorOnlyConfig, { proxyPath: "/Videos/1/stream" });
+  assert.equal(
+    proxyService.shouldRecordAccessLog(streamExecution, { statusCode: 200 }),
+    false,
+    "error-only mode must drop successful requests",
+  );
+  assert.equal(proxyService.shouldRecordAccessLog(streamExecution, { statusCode: 500 }), true);
+  assert.equal(
+    proxyService.shouldRecordAccessLog(
+      streamExecution,
+      { statusCode: 200 },
+      { statusFinal: false },
+    ),
+    true,
+    "managed stream bodies may still end up logging an error",
+  );
+
+  assert.equal(
+    proxyService.shouldRecordAccessLog(
+      baseExecution(imageConfig, { requestMethod: "OPTIONS" }),
+      {},
+    ),
+    false,
+  );
+
+  // 未知配置（测试或早期路径没带 currentConfig）时保持构建，行为不变
+  assert.equal(
+    proxyService.shouldRecordAccessLog(baseExecution(undefined), { statusCode: 200 }),
+    true,
+  );
+});
+
+test("filtered access logs skip diagnostic construction in buildSuccessResponse", async () => {
+  const buildExecution = (config) => ({
+    request: new Request("https://worker.test/alpha/Items/1/Images/Primary"),
+    requestMethod: "GET",
+    requestUrl: new URL("https://worker.test/alpha/Items/1/Images/Primary"),
+    rawRequestUrl: new URL("https://worker.test/alpha/Items/1/Images/Primary"),
+    proxyPath: "/Items/1/Images/Primary",
+    requestTraits: { isImage: true, isMetadataCacheable: true },
+    dynamicCors: {},
+    finalOrigin: "*",
+    nodeName: "alpha",
+    nodeKey: "",
+    currentConfig: config,
+    startTime: Date.now(),
+  });
+  const upstreamState = () => ({
+    response: new Response("image-bytes", {
+      status: 200,
+      headers: { "Content-Type": "image/png" },
+    }),
+    finalUrl: new URL("https://origin.test/Items/1/Images/Primary"),
+    activeTargetBase: new URL("https://origin.test"),
+  });
+
+  const originalRecordAccessLog = proxyService.recordAccessLog;
+  const originalBuildStructuredLogDetail = proxyService.buildStructuredLogDetail;
+  let detailBuildCount = 0;
+  let loggedCount = 0;
+  proxyService.buildStructuredLogDetail = (...args) => {
+    detailBuildCount += 1;
+    return originalBuildStructuredLogDetail(...args);
+  };
+  proxyService.recordAccessLog = () => {
+    loggedCount += 1;
+  };
+  try {
+    await proxyService.buildSuccessResponse(
+      buildExecution({ logEnabled: true, logWriteMode: "all", logWriteImagePoster: false }),
+      {},
+      upstreamState(),
+    );
+    assert.equal(detailBuildCount, 0, "filtered image/poster logs must not build detailJson");
+    assert.equal(loggedCount, 0);
+
+    await proxyService.buildSuccessResponse(
+      buildExecution({ logEnabled: true, logWriteMode: "all", logWriteImagePoster: true }),
+      {},
+      upstreamState(),
+    );
+    assert.ok(detailBuildCount > 0, "enabled image/poster logs still build detailJson");
+    assert.equal(loggedCount, 1);
+  } finally {
+    proxyService.recordAccessLog = originalRecordAccessLog;
+    proxyService.buildStructuredLogDetail = originalBuildStructuredLogDetail;
+  }
+});
 test("oversized PlaybackInfo responses are not retained in isolate memory", async () => {
   isolateState.PlaybackInfoResponseCache.clear();
   const execution = {
