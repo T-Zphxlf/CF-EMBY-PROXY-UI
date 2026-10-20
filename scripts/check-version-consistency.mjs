@@ -13,6 +13,7 @@ const REQUIRED_DOC_MARKERS = [
   { file: "README.md", needle: `version-${versionLabel}-`, description: "版本徽章" },
   { file: "README.md", needle: `当前 **${versionLabel}**`, description: "版本摘要" },
   { file: "AGENTS.md", needle: `当前 **${versionLabel}**`, description: "版本指针" },
+  { file: "CHANGELOG.md", needle: `## ${versionLabel}`, description: "版本小节" },
 ];
 
 // 发布摘要唯一的落点是 README：AGENTS.md 整份进每个会话的系统提示，只留规则与指针。

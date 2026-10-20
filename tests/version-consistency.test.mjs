@@ -14,6 +14,7 @@ test("repo documents agree with APP_VERSION and keep the summary in README", asy
   const failures = collectVersionDocFailures({
     "README.md": await readDoc("README.md"),
     "AGENTS.md": await readDoc("AGENTS.md"),
+    "CHANGELOG.md": await readDoc("CHANGELOG.md"),
   });
   assert.deepEqual(failures, []);
 });
@@ -22,6 +23,7 @@ test("the version pointer must carry the live version", () => {
   const documents = (agents, readme = readmeWith()) => ({
     "README.md": readme,
     "AGENTS.md": agents,
+    "CHANGELOG.md": `## ${versionLabel}`,
   });
   assert.deepEqual(
     collectVersionDocFailures(documents(`> 见 README「当前 **${versionLabel}**」`)),
@@ -35,12 +37,16 @@ test("the version pointer must carry the live version", () => {
     2,
   );
   // 文档缺失时不是静默通过
-  assert.equal(collectVersionDocFailures({}).length, 3);
+  assert.equal(collectVersionDocFailures({}).length, 4);
 });
 
 test("a release summary heading cannot come back into AGENTS.md", () => {
   const agents = (extra) => `> 当前 **${versionLabel}**\n\n${extra}`;
-  const documents = (text) => ({ "README.md": readmeWith(), "AGENTS.md": text });
+  const documents = (text) => ({
+    "README.md": readmeWith(),
+    "AGENTS.md": text,
+    "CHANGELOG.md": `## ${versionLabel}`,
+  });
   for (const heading of [
     `## ${versionLabel}版本`,
     "## 更新摘要",
@@ -58,4 +64,17 @@ test("a release summary heading cannot come back into AGENTS.md", () => {
     ),
     [],
   );
+});
+
+test("the changelog must carry a section for the live version", () => {
+  const documents = (changelog) => ({
+    "README.md": readmeWith(),
+    "AGENTS.md": `> 当前 **${versionLabel}**`,
+    "CHANGELOG.md": changelog,
+  });
+  assert.deepEqual(collectVersionDocFailures(documents(`## ${versionLabel}（2026-01-01）`)), []);
+  // 发版忘了写条目
+  assert.equal(collectVersionDocFailures(documents("## V0.0")).length, 1);
+  // 只在前言里提到版本号不够，必须是版本小节标题
+  assert.equal(collectVersionDocFailures(documents(`当前版本 ${versionLabel}，见下`)).length, 1);
 });
