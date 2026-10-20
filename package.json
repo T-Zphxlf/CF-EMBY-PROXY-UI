@@ -20,7 +20,8 @@
     "lint:fix": "oxlint --fix .",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "check": "node ./scripts/check-project.mjs"
+    "check": "node ./scripts/check-project.mjs",
+    "tail": "node --env-file-if-exists=.env ./node_modules/wrangler/bin/wrangler.js tail"
   },
   "devDependencies": {
     "acorn": "^8.15.0",

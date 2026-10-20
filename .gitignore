@@ -4,6 +4,10 @@ frontend/.env.*.local
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+# wrangler tail 等 CLI 的本地凭据，只保留占位模板
+/.env
+/.env.*
+!/.env.example
 .wrangler/
 npm-debug.log*
 .ace-tool/
