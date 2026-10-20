@@ -25,3 +25,6 @@ trace-*.json
 
 # 管理端是单文件交付，dist 只跟踪 index.html；历史打包残留不得进仓库
 frontend/dist/.vite/
+
+# 本地私有部署配置（真实 worker 名 / KV / D1 / 域），只在本机使用
+/wrangler.local.toml
